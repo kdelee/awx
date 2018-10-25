@@ -36,7 +36,8 @@ class SettingsRegistry(object):
 
     def register(self, setting, **kwargs):
         if setting in self._registry:
-            raise ImproperlyConfigured('Setting "{}" is already registered.'.format(setting))
+           pass
+           # raise ImproperlyConfigured('Setting "{}" is already registered.'.format(setting))
         category = kwargs.setdefault('category', None)
         category_slug = kwargs.setdefault('category_slug', slugify(category or '') or None)
         if category_slug in {'all', 'changed', 'user-defaults'}:
