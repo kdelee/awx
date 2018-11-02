@@ -4,6 +4,8 @@ branch = True
 omit =
     awx/main/migrations/*
     awx/lib/site-packages/*
+parallel = True
+concurrency = multiprocessing
 
 [report]
 # Regexes for lines to exclude from consideration

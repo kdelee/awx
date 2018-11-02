@@ -8,6 +8,9 @@ from awx import __version__ as tower_version
 from awx import prepare_env, MODE
 prepare_env()
 
+import coverage
+import signal
+import sys
 
 from django.core.wsgi import WSGIHandler  # NOQA
 import django  # NOQA
@@ -56,8 +59,14 @@ if settings.MIDDLEWARE:
             middleware mechanisms. Further, from django.core.wsgi.get_wsgi_application() \
             should be called to get an instance of WSGIHandler().")
 
-
 class AWXWSGIHandler(WSGIHandler):
+    def __init__(self):
+        super(AWXWSGIHandler, self)
+        print("Starting coverage data collection")
+        global cov
+        cov = coverage.Coverage()
+        cov.start()
+
     def _legacy_get_response(self, request):
         try:
             # resolve can raise a 404, in that case, pass through to the
@@ -76,5 +85,18 @@ def get_wsgi_application():
     django.setup(set_prefix=False)
     return AWXWSGIHandler()
 
+try:
+	application = get_wsgi_application()
+finally:
+    cov.stop()
+    cov.save()
+    print("Saved Coverage Data")
+    sys.exit()
 
-application = get_wsgi_application()
+def stop_coverage(*args):
+    cov.stop()
+    cov.save()
+    print("Saved Coverage Data")
+    sys.exit()
+# on sigterm, call "stop_coverage"
+signal.signal(signal.SIGTERM, stop_coverage)
