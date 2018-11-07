@@ -62,10 +62,11 @@ if settings.MIDDLEWARE:
 class AWXWSGIHandler(WSGIHandler):
     def __init__(self):
         super(AWXWSGIHandler, self)
-        print("Starting coverage data collection")
-        global cov
-        cov = coverage.Coverage()
-        cov.start()
+        if settings.COVERAGE_ENABLED:
+            print("Starting coverage data collection")
+            global cov
+            cov = coverage.Coverage()
+            cov.start()
 
     def _legacy_get_response(self, request):
         try:
@@ -85,18 +86,4 @@ def get_wsgi_application():
     django.setup(set_prefix=False)
     return AWXWSGIHandler()
 
-try:
-	application = get_wsgi_application()
-finally:
-    cov.stop()
-    cov.save()
-    print("Saved Coverage Data")
-    sys.exit()
-
-def stop_coverage(*args):
-    cov.stop()
-    cov.save()
-    print("Saved Coverage Data")
-    sys.exit()
-# on sigterm, call "stop_coverage"
-signal.signal(signal.SIGTERM, stop_coverage)
+application = get_wsgi_application()
