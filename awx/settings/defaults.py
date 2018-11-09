@@ -302,7 +302,7 @@ INSTALLED_APPS = (
 
 if COVERAGE_ENABLED:
     print("COVERAGE ENABLED, ADDING APP TO INSTALLED APPS")
-    INSTALLED_APPS += ('django_coverage_app',)
+    INSTALLED_APPS += ('awx.maximum_parsimony',)
 
 INTERNAL_IPS = ('127.0.0.1',)
 

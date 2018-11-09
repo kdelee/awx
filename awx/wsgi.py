@@ -8,7 +8,6 @@ from awx import __version__ as tower_version
 from awx import prepare_env, MODE
 prepare_env()
 
-import coverage
 import signal
 import sys
 
@@ -61,11 +60,10 @@ if settings.MIDDLEWARE:
 
 class AWXWSGIHandler(WSGIHandler):
     def __init__(self):
-        super(AWXWSGIHandler, self)
+        super(AWXWSGIHandler, self).__init__()
         if settings.COVERAGE_ENABLED:
-            print("Starting coverage data collection")
-            global cov
-            cov = coverage.Coverage()
+            print("*!*!*!*Starting coverage data collection*!*!*!*")
+            from maximum_parsimony.cov import cov
             cov.start()
 
     def _legacy_get_response(self, request):
