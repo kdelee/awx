@@ -13,6 +13,7 @@ def start_coverage(request):
 def stop_coverage(request):
     cov.stop()
     cov.save()
+    cov.combine()
     cov.html_report()
     return HttpResponse('Stopped and saved data from code coverage')
 

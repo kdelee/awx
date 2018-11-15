@@ -1,3 +1,3 @@
 import coverage
 
-cov = coverage.Coverage()
+cov = coverage.Coverage('ELIJAH')
