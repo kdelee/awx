@@ -86,6 +86,7 @@ class ApiVersionRootView(APIView):
         ''' List top level resources '''
         data = OrderedDict()
         data['ping'] = reverse('api:api_v1_ping_view', request=request)
+        data['howdy'] = reverse('api:api_v1_howdy_world_view', request=request)
         data['instances'] = reverse('api:instance_list', request=request)
         data['instance_groups'] = reverse('api:instance_group_list', request=request)
         data['config'] = reverse('api:api_v1_config_view', request=request)
@@ -188,6 +189,15 @@ class ApiV1HowdyWorldView(APIView):
             'howdy': 'world',
         }
         return Response(response)
+
+    def post(self, request):
+        if not isinstance(request.data, dict):
+            return Response({"error": _("Invalid howdy")}, status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get('howdy'):
+            return Response({"howdy":request.data['howdy']})
+
+    def delete(self, request):
+            return Response({"error": _("Cannot delete howdy.")}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ApiV1ConfigView(APIView):
