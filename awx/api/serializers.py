@@ -1330,7 +1330,6 @@ class ProjectOptionsSerializer(BaseSerializer):
             ret['credential'] = None
         return ret
 
-
 class ProjectSerializer(UnifiedJobTemplateSerializer, ProjectOptionsSerializer):
 
     status = serializers.ChoiceField(choices=Project.PROJECT_STATUS_CHOICES, read_only=True)
@@ -1344,7 +1343,7 @@ class ProjectSerializer(UnifiedJobTemplateSerializer, ProjectOptionsSerializer):
 
     class Meta:
         model = Project
-        fields = ('*', 'organization', 'scm_update_on_launch',
+        fields = ('*', 'organization', 'scm_update_on_launch', 'foobar',
                   'scm_update_cache_timeout', 'scm_revision', 'custom_virtualenv',) + \
                  ('last_update_failed', 'last_updated')  # Backwards compatibility
 

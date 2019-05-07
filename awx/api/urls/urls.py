@@ -14,6 +14,7 @@ from awx.api.views import (
     ApiV1RootView,
     ApiV2RootView,
     ApiV1PingView,
+    ApiV1HowdyWorldView,
     ApiV1ConfigView,
     AuthView,
     UserMeList,
@@ -77,6 +78,7 @@ from .oauth2_root import urls as oauth2_root_urls
 v1_urls = [
     url(r'^$', ApiV1RootView.as_view(), name='api_v1_root_view'),
     url(r'^ping/$', ApiV1PingView.as_view(), name='api_v1_ping_view'),
+    url(r'^howdy/$', ApiV1HowdyWorldView.as_view(), name='howdy_world_view'),
     url(r'^config/$', ApiV1ConfigView.as_view(), name='api_v1_config_view'),
     url(r'^auth/$', AuthView.as_view()),
     url(r'^me/$', UserMeList.as_view(), name='user_me_list'),

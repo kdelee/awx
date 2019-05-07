@@ -127,6 +127,11 @@ class ProjectOptions(models.Model):
         default=0,
         help_text=_("The amount of time (in seconds) to run before the task is canceled."),
     )
+    foobar = models.IntegerField(
+        blank=True,
+        default=42,
+        help_text=_("The foobar setting"),
+    )
 
     def clean_scm_type(self):
         return self.scm_type or ''

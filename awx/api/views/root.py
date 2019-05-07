@@ -174,6 +174,22 @@ class ApiV1PingView(APIView):
         return Response(response)
 
 
+class ApiV1HowdyWorldView(APIView):
+    """An example new page
+    """
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    view_name = _('HowdyWorld')
+    swagger_topic = 'HowdyWorld'
+
+    def get(self, request, format=None):
+        """Say Howdy"""
+        response = {
+            'howdy': 'world',
+        }
+        return Response(response)
+
+
 class ApiV1ConfigView(APIView):
 
     permission_classes = (IsAuthenticated,)
