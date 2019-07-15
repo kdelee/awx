@@ -83,6 +83,37 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
             $scope.jobNodeState.credentialRequiresPassword = credentialRequiresPassword;
         };
 
+        const watchForPromptChanges = () => {
+            let promptDataToWatch = [
+                'jobNodeState.promptData.prompts.inventory.value',
+                'jobNodeState.promptData.prompts.verbosity.value',
+                'jobNodeState.missingSurveyValue'
+            ];
+
+            promptWatcher = $scope.$watchGroup(promptDataToWatch, () => {
+                const templateType = _.get($scope, 'jobNodeState.promptData.templateType');
+                let missingPromptValue = false;
+
+                if ($scope.jobNodeState.missingSurveyValue) {
+                    missingPromptValue = true;
+                }
+
+                if (templateType !== "workflow_job_template") {
+                    if (!$scope.jobNodeState.promptData.prompts.inventory.value || !$scope.jobNodeState.promptData.prompts.inventory.value.id) {
+                        missingPromptValue = true;
+                    }
+                }
+
+                $scope.jobNodeState.promptModalMissingReqFields = missingPromptValue;
+            });
+
+            if ($scope.jobNodeState.promptData.launchConf.ask_credential_on_launch && $scope.jobNodeState.credentialRequiresPassword) {
+                credentialsWatcher = $scope.$watch('jobNodeState.promptData.prompts.credentials', () => {
+                    checkCredentialsForRequiredPasswords();
+                });
+            }
+        };
+
         const clearWatchers = () => {
             if (promptWatcher) {
                 promptWatcher();
@@ -95,6 +126,111 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
             if (credentialsWatcher) {
                 credentialsWatcher();
             }
+        };
+
+        const formatPopOverDetails = (model) => {
+            const popOverDetails = {};
+            popOverDetails.playbook = model.playbook || i18n._('NONE SELECTED');
+            Object.keys(model.summary_fields).forEach(field => {
+                if (field === 'project') {
+                    popOverDetails.project = model.summary_fields[field].name || i18n._('NONE SELECTED');
+                }
+                if (field === 'inventory') {
+                    popOverDetails.inventory = model.summary_fields[field].name || i18n._('NONE SELECTED');
+                }
+                if (field === 'credentials') {
+                    if (model.summary_fields[field].length <= 0) {
+                        popOverDetails.credentials = i18n._('NONE SELECTED');
+                    }
+                    else {
+                        const credentialNames = model.summary_fields[field].map(({name}) => name);
+                        popOverDetails.credentials = credentialNames.join('<br />');
+                    }
+                }
+            });
+            model.popOver = `
+                <dl>
+                    <dt>${i18n._('INVENTORY')}</dt>
+                    <dd>${$filter('sanitize')(popOverDetails.inventory)}</dd>
+                </dl>
+                <dl>
+                    <dt>${i18n._('PROJECT')}</dt>
+                    <dd>${$filter('sanitize')(popOverDetails.project)}</dd>
+                </dl>
+                <dl>
+                    <dt>${i18n._('PLAYBOOK')}</dt>
+                    <dd>${$filter('sanitize')(popOverDetails.playbook)}</dd>
+                </dl>
+                <dl>
+                    <dt>${i18n._('CREDENTIAL')}</dt>
+                    <dd>${$filter('sanitize')(popOverDetails.credentials)}</dd>
+                </dl>
+            `;
+        };
+
+        const updateSelectedRow = () => {
+            let unifiedJobTemplateId;
+            switch($scope.activeTab) {
+                case 'jobs':
+                    unifiedJobTemplateId = _.get($scope, 'jobNodeState.selectedTemplate.id') || null;
+                    $scope.wf_maker_templates.forEach((row, i) => {
+                        if (row.type === 'job_template') {
+                            formatPopOverDetails(row);
+                        }
+                        $scope.wf_maker_templates[i].checked = (row.id === unifiedJobTemplateId) ? 1 : 0;
+                    });
+                    break;
+                case 'project_syncs':
+                    unifiedJobTemplateId = _.get($scope, 'projectNodeState.selectedTemplate.id') || null;
+                    $scope.wf_maker_projects.forEach((row, i) => {
+                        $scope.wf_maker_projects[i].checked = (row.id === unifiedJobTemplateId) ? 1 : 0;
+                    });
+                    break;
+                case 'inventory_syncs':
+                    unifiedJobTemplateId = _.get($scope, 'inventoryNodeState.selectedTemplate.id') || null;
+                    $scope.wf_maker_inventory_sources.forEach((row, i) => {
+                        $scope.wf_maker_inventory_sources[i].checked = (row.id === unifiedJobTemplateId) ? 1 : 0;
+                    });
+                    break;
+            }
+        };
+
+        const getEditNodeHelpMessage = (selectedTemplate, workflowJobTemplateObj) => {
+            if (selectedTemplate) {
+                if (selectedTemplate.type === "workflow_job_template") {
+                    if (workflowJobTemplateObj.inventory) {
+                        if (selectedTemplate.ask_inventory_on_launch) {
+                            return $scope.strings.get('workflow_maker.INVENTORY_WILL_OVERRIDE');
+                        }
+                    }
+
+                    if (workflowJobTemplateObj.ask_inventory_on_launch) {
+                        if (selectedTemplate.ask_inventory_on_launch) {
+                            return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_OVERRIDE');
+                        }
+                    }
+                }
+
+                if (selectedTemplate.type === "job_template") {
+                    if (workflowJobTemplateObj.inventory) {
+                        if (selectedTemplate.ask_inventory_on_launch) {
+                            return $scope.strings.get('workflow_maker.INVENTORY_WILL_OVERRIDE');
+                        }
+
+                        return $scope.strings.get('workflow_maker.INVENTORY_WILL_NOT_OVERRIDE');
+                    }
+
+                    if (workflowJobTemplateObj.ask_inventory_on_launch) {
+                        if (selectedTemplate.ask_inventory_on_launch) {
+                            return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_OVERRIDE');
+                        }
+
+                        return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_NOT_OVERRIDE');
+                    }
+                }
+            }
+
+             return null;
         };
 
         const finishConfiguringEdit = () => {
@@ -281,7 +417,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                                             $scope.nodeFormDataLoaded = true;
                                         });
                                 } else {
-                                    $scope.nodeConfig.node.promptData = $jobNodeState.promptData = {
+                                    $scope.nodeConfig.node.promptData = $scope.jobNodeState.promptData = {
                                         launchConf: launchConf,
                                         launchOptions: launchOptions,
                                         prompts: prompts,
@@ -373,84 +509,6 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 $scope.nodeFormDataLoaded = true;
             }
 
-        };
-
-        const formatPopOverDetails = (model) => {
-            const popOverDetails = {};
-            popOverDetails.playbook = model.playbook || i18n._('NONE SELECTED');
-            Object.keys(model.summary_fields).forEach(field => {
-                if (field === 'project') {
-                    popOverDetails.project = model.summary_fields[field].name || i18n._('NONE SELECTED');
-                }
-                if (field === 'inventory') {
-                    popOverDetails.inventory = model.summary_fields[field].name || i18n._('NONE SELECTED');
-                }
-                if (field === 'credentials') {
-                    if (model.summary_fields[field].length <= 0) {
-                        popOverDetails.credentials = i18n._('NONE SELECTED');
-                    }
-                    else {
-                        const credentialNames = model.summary_fields[field].map(({name}) => name);
-                        popOverDetails.credentials = credentialNames.join('<br />');
-                    }
-                }
-            });
-            model.popOver = `
-                <dl>
-                    <dt>${i18n._('INVENTORY')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.inventory)}</dd>
-                </dl>
-                <dl>
-                    <dt>${i18n._('PROJECT')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.project)}</dd>
-                </dl>
-                <dl>
-                    <dt>${i18n._('PLAYBOOK')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.playbook)}</dd>
-                </dl>
-                <dl>
-                    <dt>${i18n._('CREDENTIAL')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.credentials)}</dd>
-                </dl>
-            `;
-        };
-
-        const getEditNodeHelpMessage = (selectedTemplate, workflowJobTemplateObj) => {
-            if (selectedTemplate) {
-                if (selectedTemplate.type === "workflow_job_template") {
-                    if (workflowJobTemplateObj.inventory) {
-                        if (selectedTemplate.ask_inventory_on_launch) {
-                            return $scope.strings.get('workflow_maker.INVENTORY_WILL_OVERRIDE');
-                        }
-                    }
-
-                    if (workflowJobTemplateObj.ask_inventory_on_launch) {
-                        if (selectedTemplate.ask_inventory_on_launch) {
-                            return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_OVERRIDE');
-                        }
-                    }
-                }
-
-                if (selectedTemplate.type === "job_template") {
-                    if (workflowJobTemplateObj.inventory) {
-                        if (selectedTemplate.ask_inventory_on_launch) {
-                            return $scope.strings.get('workflow_maker.INVENTORY_WILL_OVERRIDE');
-                        }
-
-                        return $scope.strings.get('workflow_maker.INVENTORY_WILL_NOT_OVERRIDE');
-                    }
-
-                    if (workflowJobTemplateObj.ask_inventory_on_launch) {
-                        if (selectedTemplate.ask_inventory_on_launch) {
-                            return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_OVERRIDE');
-                        }
-
-                        return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_NOT_OVERRIDE');
-                    }
-                }
-            }
-
-             return null;
         };
 
         const setupNodeForm = () => {
@@ -605,64 +663,6 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 });
         };
 
-        const updateSelectedRow = () => {
-            let unifiedJobTemplateId;
-            switch($scope.activeTab) {
-                case 'jobs':
-                    unifiedJobTemplateId = _.get($scope, 'jobNodeState.selectedTemplate.id') || null;
-                    $scope.wf_maker_templates.forEach((row, i) => {
-                        if (row.type === 'job_template') {
-                            formatPopOverDetails(row);
-                        }
-                        $scope.wf_maker_templates[i].checked = (row.id === unifiedJobTemplateId) ? 1 : 0;
-                    });
-                    break;
-                case 'project_syncs':
-                    unifiedJobTemplateId = _.get($scope, 'projectNodeState.selectedTemplate.id') || null;
-                    $scope.wf_maker_projects.forEach((row, i) => {
-                        $scope.wf_maker_projects[i].checked = (row.id === unifiedJobTemplateId) ? 1 : 0;
-                    });
-                    break;
-                case 'inventory_syncs':
-                    unifiedJobTemplateId = _.get($scope, 'inventoryNodeState.selectedTemplate.id') || null;
-                    $scope.wf_maker_inventory_sources.forEach((row, i) => {
-                        $scope.wf_maker_inventory_sources[i].checked = (row.id === unifiedJobTemplateId) ? 1 : 0;
-                    });
-                    break;
-            }
-        };
-
-        const watchForPromptChanges = () => {
-            let promptDataToWatch = [
-                'jobNodeState.promptData.prompts.inventory.value',
-                'jobNodeState.promptData.prompts.verbosity.value',
-                'jobNodeState.missingSurveyValue'
-            ];
-
-            promptWatcher = $scope.$watchGroup(promptDataToWatch, () => {
-                const templateType = _.get($scope, 'jobNodeState.promptData.templateType');
-                let missingPromptValue = false;
-
-                if ($scope.jobNodeState.missingSurveyValue) {
-                    missingPromptValue = true;
-                }
-
-                if (templateType !== "workflow_job_template") {
-                    if (!$scope.jobNodeState.promptData.prompts.inventory.value || !$scope.jobNodeState.promptData.prompts.inventory.value.id) {
-                        missingPromptValue = true;
-                    }
-                }
-
-                $scope.jobNodeState.promptModalMissingReqFields = missingPromptValue;
-            });
-
-            if ($scope.jobNodeState.promptData.launchConf.ask_credential_on_launch && $scope.jobNodeState.credentialRequiresPassword) {
-                credentialsWatcher = $scope.$watch('jobNodeState.promptData.prompts.credentials', () => {
-                    checkCredentialsForRequiredPasswords();
-                });
-            }
-        };
-
         $scope.confirmNodeForm = () => {
             const nodeFormData = {
                 edgeType: $scope.edgeType
@@ -673,7 +673,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                     description: $scope.pauseNodeState.description,
                     name: $scope.pauseNodeState.name,
                     unified_job_type: "workflow_approval"
-                }
+                };
             } else if($scope.activeTab === "jobs") {
                 nodeFormData.selectedTemplate = $scope.jobNodeState.selectedTemplate;
                 nodeFormData.promptData = $scope.jobNodeState.promptData;
@@ -692,10 +692,10 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
 
         $scope.selectIsDisabled = () => {
             if($scope.activeTab === "jobs") {
-                return !($scope.jobNodeState.selectedTemplate) 
-                    || $scope.jobNodeState.promptModalMissingReqFields 
-                    || $scope.jobNodeState.credentialRequiresPassword 
-                    || $scope.jobNodeState.selectedTemplateInvalid;
+                return !($scope.jobNodeState.selectedTemplate) ||
+                    $scope.jobNodeState.promptModalMissingReqFields ||
+                    $scope.jobNodeState.credentialRequiresPassword ||
+                    $scope.jobNodeState.selectedTemplateInvalid;
             } else if($scope.activeTab === "project_syncs") {
                 return !$scope.projectNodeState.selectedTemplate;
             } else if($scope.activeTab === "inventory_syncs") {
