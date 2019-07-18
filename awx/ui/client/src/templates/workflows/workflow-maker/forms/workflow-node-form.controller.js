@@ -6,11 +6,11 @@
 
 export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService', 'Rest', '$q',
         'TemplatesStrings', 'CreateSelect2', 'Empty', 'QuerySet', '$filter',
-        'GetBasePath', 'TemplateList', 'ProjectList', 'InventorySourcesList', 'ProcessErrors',
+        'GetBasePath', 'WorkflowNodeFormService', 'ProcessErrors',
         'i18n', 'ParseTypeChange', 'WorkflowJobTemplateModel',
     function($scope, TemplatesService, JobTemplate, PromptService, Rest, $q,
         TemplatesStrings, CreateSelect2, Empty, qs, $filter,
-        GetBasePath, TemplateList, ProjectList, InventorySourcesList, ProcessErrors,
+        GetBasePath, WorkflowNodeFormService, ProcessErrors,
         i18n, ParseTypeChange, WorkflowJobTemplate
     ) {
 
@@ -19,54 +19,9 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
         $scope.strings = TemplatesStrings;
         $scope.editNodeHelpMessage = null;
 
-        let templateList = _.cloneDeep(TemplateList);
-        delete templateList.actions;
-        delete templateList.fields.type;
-        delete templateList.fields.description;
-        delete templateList.fields.smart_status;
-        delete templateList.fields.labels;
-        delete templateList.fieldActions;
-        templateList.name = 'wf_maker_templates';
-        templateList.iterator = 'wf_maker_template';
-        templateList.fields.name.columnClass = "col-md-8";
-        templateList.fields.name.tag = i18n._('WORKFLOW');
-        templateList.fields.name.showTag = "{{wf_maker_template.type === 'workflow_job_template'}}";
-        templateList.disableRow = "{{ readOnly }}";
-        templateList.disableRowValue = 'readOnly';
-        templateList.basePath = 'unified_job_templates';
-        templateList.fields.info = {
-            ngInclude: "'/static/partials/job-template-details.html'",
-            type: 'template',
-            columnClass: 'col-md-3',
-            infoHeaderClass: 'col-md-3',
-            label: '',
-            nosort: true
-        };
-        templateList.maxVisiblePages = 5;
-        templateList.searchBarFullWidth = true;
-        $scope.templateList = templateList;
-
-        let inventorySourceList = _.cloneDeep(InventorySourcesList);
-        inventorySourceList.name = 'wf_maker_inventory_sources';
-        inventorySourceList.iterator = 'wf_maker_inventory_source';
-        inventorySourceList.maxVisiblePages = 5;
-        inventorySourceList.searchBarFullWidth = true;
-        inventorySourceList.disableRow = "{{ readOnly }}";
-        inventorySourceList.disableRowValue = 'readOnly';
-        $scope.inventorySourceList = inventorySourceList;
-
-        let projectList = _.cloneDeep(ProjectList);
-        delete projectList.fields.status;
-        delete projectList.fields.scm_type;
-        delete projectList.fields.last_updated;
-        projectList.name = 'wf_maker_projects';
-        projectList.iterator = 'wf_maker_project';
-        projectList.fields.name.columnClass = "col-md-11";
-        projectList.maxVisiblePages = 5;
-        projectList.searchBarFullWidth = true;
-        projectList.disableRow = "{{ readOnly }}";
-        projectList.disableRowValue = 'readOnly';
-        $scope.projectList = projectList;
+        $scope.templateList = WorkflowNodeFormService.templateListDefinition();
+        $scope.inventorySourceList = WorkflowNodeFormService.inventorySourceListDefinition();
+        $scope.projectList = WorkflowNodeFormService.projectListDefinition();
 
         const checkCredentialsForRequiredPasswords = () => {
             let credentialRequiresPassword = false;
@@ -128,6 +83,17 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
             }
         };
 
+        const select2ifyDropdowns = () => {
+            CreateSelect2({
+                element: '#workflow-node-types',
+                multiple: false
+            });
+            CreateSelect2({
+                element: '#workflow_node_edge',
+                multiple: false
+            });
+        };
+
         const formatPopOverDetails = (model) => {
             const popOverDetails = {};
             popOverDetails.playbook = model.playbook || i18n._('NONE SELECTED');
@@ -149,29 +115,31 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 }
             });
             model.popOver = `
-                <dl>
-                    <dt>${i18n._('INVENTORY')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.inventory)}</dd>
-                </dl>
-                <dl>
-                    <dt>${i18n._('PROJECT')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.project)}</dd>
-                </dl>
-                <dl>
-                    <dt>${i18n._('PLAYBOOK')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.playbook)}</dd>
-                </dl>
-                <dl>
-                    <dt>${i18n._('CREDENTIAL')}</dt>
-                    <dd>${$filter('sanitize')(popOverDetails.credentials)}</dd>
-                </dl>
+                <table>
+                    <tr>
+                        <td>${i18n._('INVENTORY')}&nbsp;</td>
+                        <td>${$filter('sanitize')(popOverDetails.inventory)}</td>
+                    </tr>
+                    <tr>
+                        <td>${i18n._('PROJECT')}&nbsp;</td>
+                        <td>${$filter('sanitize')(popOverDetails.project)}</td>
+                    </tr>
+                    <tr>
+                        <td>${i18n._('PLAYBOOK')}&nbsp;</td>
+                        <td>${$filter('sanitize')(popOverDetails.playbook)}</td>
+                    </tr>
+                    <tr>
+                        <td>${i18n._('CREDENTIAL')}&nbsp;</td>
+                        <td>${$filter('sanitize')(popOverDetails.credentials)}</td>
+                    </tr>
+                </table>
             `;
         };
 
         const updateSelectedRow = () => {
             let unifiedJobTemplateId;
             switch($scope.activeTab) {
-                case 'jobs':
+                case 'templates':
                     unifiedJobTemplateId = _.get($scope, 'jobNodeState.selectedTemplate.id') || null;
                     $scope.wf_maker_templates.forEach((row, i) => {
                         if (row.type === 'job_template') {
@@ -198,16 +166,12 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
         const getEditNodeHelpMessage = (selectedTemplate, workflowJobTemplateObj) => {
             if (selectedTemplate) {
                 if (selectedTemplate.type === "workflow_job_template") {
-                    if (workflowJobTemplateObj.inventory) {
-                        if (selectedTemplate.ask_inventory_on_launch) {
-                            return $scope.strings.get('workflow_maker.INVENTORY_WILL_OVERRIDE');
-                        }
+                    if (workflowJobTemplateObj.inventory && selectedTemplate.ask_inventory_on_launch) {
+                        return $scope.strings.get('workflow_maker.INVENTORY_WILL_OVERRIDE');
                     }
 
-                    if (workflowJobTemplateObj.ask_inventory_on_launch) {
-                        if (selectedTemplate.ask_inventory_on_launch) {
-                            return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_OVERRIDE');
-                        }
+                    if (workflowJobTemplateObj.ask_inventory_on_launch && selectedTemplate.ask_inventory_on_launch) {
+                        return $scope.strings.get('workflow_maker.INVENTORY_PROMPT_WILL_OVERRIDE');
                     }
                 }
 
@@ -443,7 +407,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                     if (selectedTemplate.unified_job_type) {
                         switch (selectedTemplate.unified_job_type) {
                             case "job":
-                                $scope.activeTab = "jobs";
+                                $scope.activeTab = "templates";
                                 $scope.jobNodeState.selectedTemplate = selectedTemplate;
                                 break;
                             case "project_update":
@@ -458,11 +422,8 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                     } else if (selectedTemplate.type) {
                         switch (selectedTemplate.type) {
                             case "job_template":
-                                $scope.activeTab = "jobs";
-                                $scope.jobNodeState.selectedTemplate = selectedTemplate;
-                                break;
                             case "workflow_job_template":
-                                $scope.activeTab = "jobs";
+                                $scope.activeTab = "templates";
                                 $scope.jobNodeState.selectedTemplate = selectedTemplate;
                                 break;
                             case "project":
@@ -477,13 +438,10 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                     }
                     updateSelectedRow();
                 } else {
-                    $scope.activeTab = "jobs";
+                    $scope.activeTab = "templates";
                 }
 
-                CreateSelect2({
-                    element: '#workflow-node-types',
-                    multiple: false
-                });
+                select2ifyDropdowns();
             } else {
                 $scope.jobTags = $scope.nodeConfig.node.originalNodeObject.job_tags ? $scope.nodeConfig.node.originalNodeObject.job_tags.split(',').map((tag) => (tag)) : [];
                 $scope.skipTags = $scope.nodeConfig.node.originalNodeObject.skip_tags ? $scope.nodeConfig.node.originalNodeObject.skip_tags.split(',').map((tag) => (tag)) : [];
@@ -530,9 +488,10 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 searchTags: [],
                 selectedTemplate: null,
             };
-            $scope.pauseNodeState = {
+            $scope.approvalNodeState = {
                 name: null,
-                description: null
+                description: null,
+                timeout: null
             };
             $scope.nodeFormDataLoaded = false;
             $scope.wf_maker_template_queryset = {
@@ -588,30 +547,23 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 })
             );
 
-            CreateSelect2({
-                element: '#workflow-node-types',
-                multiple: false
-            });
-
             $q.all(listPromises)
                 .then(() => {
                     if ($scope.nodeConfig.mode === "edit") {
                         if ($scope.nodeConfig.node.unifiedJobTemplate && $scope.nodeConfig.node.unifiedJobTemplate.unified_job_type === "workflow_approval") {
-                            $scope.activeTab = "pause";
-                            CreateSelect2({
-                                element: '#workflow_node_edge',
-                                multiple: false
-                            });
+                            $scope.activeTab = "approval";
+                            select2ifyDropdowns();
 
-                            $scope.pauseNodeState = {
+                            $scope.approvalNodeState = {
                                 name: $scope.nodeConfig.node.unifiedJobTemplate.name,
                                 description: $scope.nodeConfig.node.unifiedJobTemplate.description,
+                                timeout: $scope.nodeConfig.node.unifiedJobTemplate.timeout
                             };
 
                             $scope.nodeFormDataLoaded = true;
                         } else {
                             // Make sure that we have the full unified job template object
-                            if (!$scope.nodeConfig.node.fullUnifiedJobTemplateObject) {
+                            if (!$scope.nodeConfig.node.fullUnifiedJobTemplateObject && _.has($scope, 'nodeConfig.node.originalNodeObject.summary_fields.unified_job_template')) {
                                 // This is a node that we got back from the api with an incomplete
                                 // unified job template so we're going to pull down the whole object
                                 TemplatesService.getUnifiedJobTemplate($scope.nodeConfig.node.originalNodeObject.summary_fields.unified_job_template.id)
@@ -630,7 +582,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                             }
                         }
                     } else {
-                        $scope.activeTab = "jobs";
+                        $scope.activeTab = "templates";
                         const alwaysOption = {
                             label: $scope.strings.get('workflow_maker.ALWAYS'),
                             value: 'always'
@@ -653,11 +605,8 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                                 $scope.edgeTypeOptions.push(successOption, failureOption);
                                 break;
                         }
-                        CreateSelect2({
-                            element: '#workflow_node_edge',
-                            multiple: false
-                        });
-
+                        select2ifyDropdowns();
+            
                         $scope.nodeFormDataLoaded = true;
                     }
                 });
@@ -668,13 +617,14 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 edgeType: $scope.edgeType
             };
 
-            if ($scope.activeTab === "pause") {
+            if ($scope.activeTab === "approval") {
                 nodeFormData.selectedTemplate = {
-                    description: $scope.pauseNodeState.description,
-                    name: $scope.pauseNodeState.name,
+                    name: $scope.approvalNodeState.name,
+                    description: $scope.approvalNodeState.description,
+                    timeout: $scope.approvalNodeState.timeout,
                     unified_job_type: "workflow_approval"
                 };
-            } else if($scope.activeTab === "jobs") {
+            } else if($scope.activeTab === "templates") {
                 nodeFormData.selectedTemplate = $scope.jobNodeState.selectedTemplate;
                 nodeFormData.promptData = $scope.jobNodeState.promptData;
             } else if($scope.activeTab === "project_syncs") {
@@ -691,7 +641,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
         };
 
         $scope.selectIsDisabled = () => {
-            if($scope.activeTab === "jobs") {
+            if($scope.activeTab === "templates") {
                 return !($scope.jobNodeState.selectedTemplate) ||
                     $scope.jobNodeState.promptModalMissingReqFields ||
                     $scope.jobNodeState.credentialRequiresPassword ||
@@ -700,18 +650,19 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 return !$scope.projectNodeState.selectedTemplate;
             } else if($scope.activeTab === "inventory_syncs") {
                 return !$scope.inventoryNodeState.selectedTemplate;
-            } else if ($scope.activeTab === "pause") {
-                return !($scope.pauseNodeState.name && $scope.pauseNodeState.name !== "");
-            }
+            } else if ($scope.activeTab === "approval") {
+                return !($scope.approvalNodeState.name && $scope.approvalNodeState.name !== "");
+            } 
         };
 
         $scope.selectTemplate = (selectedTemplate) => {
             if (!$scope.readOnly) {
                 clearWatchers();
 
-                $scope.pauseNodeState = {
+                $scope.approvalNodeState = {
                     name: null,
-                    description: null
+                    description: null,
+                    timeout: null
                 };
                 $scope.editNodeHelpMessage = getEditNodeHelpMessage(selectedTemplate, $scope.workflowJobTemplateObj);
 
