@@ -2782,6 +2782,9 @@ class WorkflowApprovalAccess(BaseAccess):
     def can_use(self, obj):
         return True
 
+    def can_start(self, obj, validate_license=True):
+        return True
+
     def filtered_queryset(self):
         return self.model.objects.filter(
             unified_job_node__in=WorkflowJobNode.accessible_pk_qs(
