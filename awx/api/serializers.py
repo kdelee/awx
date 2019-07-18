@@ -3068,7 +3068,7 @@ class JobRelaunchSerializer(BaseSerializer):
         attrs = super(JobRelaunchSerializer, self).validate(attrs)
         return attrs
 
-# &&&&&&
+
 class JobCreateScheduleSerializer(BaseSerializer):
 
     can_schedule = serializers.SerializerMethodField()
@@ -3576,7 +3576,7 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBaseSerializer):
 
     def get_related(self, obj):
         res = super(WorkflowJobTemplateNodeSerializer, self).get_related(obj)
-        res['create_approval_job_template'] = self.reverse('api:workflow_job_template_node_create_approval', kwargs={'pk': obj.pk})
+        res['create_approval_template'] = self.reverse('api:workflow_job_template_node_create_approval', kwargs={'pk': obj.pk})
         res['success_nodes'] = self.reverse('api:workflow_job_template_node_success_nodes_list', kwargs={'pk': obj.pk})
         res['failure_nodes'] = self.reverse('api:workflow_job_template_node_failure_nodes_list', kwargs={'pk': obj.pk})
         res['always_nodes'] = self.reverse('api:workflow_job_template_node_always_nodes_list', kwargs={'pk': obj.pk})
@@ -3609,6 +3609,9 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBaseSerializer):
         if 'credential' in attrs:  # TODO: remove when v2 API is deprecated
             deprecated_fields['credential'] = attrs.pop('credential')
         view = self.context.get('view')
+        if attrs.get('unified_job_template') is None:
+            return {'unified_job_template': None,
+                    'workflow_job_template': attrs.get('workflow_job_template'),}
         attrs = super(WorkflowJobTemplateNodeSerializer, self).validate(attrs)
         ujt_obj = None
         if 'unified_job_template' in attrs:
@@ -3703,12 +3706,15 @@ class WorkflowJobTemplateNodeDetailSerializer(WorkflowJobTemplateNodeSerializer)
             field_kwargs.pop('queryset', None)
         return field_class, field_kwargs
 
-# &&&&&&
+
 class WorkflowJobTemplateNodeCreateApprovalSerializer(BaseSerializer):
 
     class Meta:
         model = WorkflowApprovalTemplate
         fields = ('timeout', 'name', 'description',)
+
+    def to_representation(self, obj):
+        return {}
 
 
 class JobListSerializer(JobSerializer, UnifiedJobListSerializer):
