@@ -124,7 +124,7 @@ export default ['$scope', 'TemplatesService',
 
                 if (_.has(node, 'fullUnifiedJobTemplateObject') &&
                     (node.fullUnifiedJobTemplateObject.type === "workflow_job_template" ||
-                    node.fullUnifiedJobTemplateObject.type === "job_template") && 
+                    node.fullUnifiedJobTemplateObject.type === "job_template") &&
                     node.promptData
                 ) {
                     sendableNodeData = PromptService.bundlePromptDataForSaving({
@@ -185,7 +185,7 @@ export default ['$scope', 'TemplatesService',
                                             return credFromPrompt.id === defaultCred.id;
                                         });
                                     });
-    
+
                                     credentialIdsToPost.forEach((credentialToPost) => {
                                         credentialRequests.push({
                                             id: data.id,
@@ -306,7 +306,7 @@ export default ['$scope', 'TemplatesService',
                             let disassociatePromises = [];
                             let associatePromises = [];
                             let linkMap = {};
-    
+
                             // Build a link map for easy access
                             $scope.graphState.arrayOfLinksForChart.forEach(link => {
                                 // link.source.id of 1 is our artificial start node
@@ -316,11 +316,11 @@ export default ['$scope', 'TemplatesService',
                                     if (!linkMap[sourceNodeId]) {
                                         linkMap[sourceNodeId] = {};
                                     }
-    
+
                                     linkMap[sourceNodeId][targetNodeId] = link.edgeType;
                                 }
                             });
-    
+
                             Object.keys(nodeRef).map((workflowNodeId) => {
                                 let nodeId = nodeRef[workflowNodeId].originalNodeObject.id;
                                 if (nodeRef[workflowNodeId].originalNodeObject.success_nodes) {
@@ -378,7 +378,7 @@ export default ['$scope', 'TemplatesService',
                                     });
                                 }
                             });
-    
+
                             Object.keys(linkMap).map((sourceNodeId) => {
                                 Object.keys(linkMap[sourceNodeId]).map((targetNodeId) => {
                                     const sourceChartNodeId = nodeIdToChartNodeIdMapping[sourceNodeId];
@@ -429,7 +429,7 @@ export default ['$scope', 'TemplatesService',
                                     }
                                 });
                             });
-    
+
                             $q.all(disassociatePromises)
                                 .then(() => {
                                     let credentialPromises = credentialRequests.map((request) => {
@@ -438,7 +438,7 @@ export default ['$scope', 'TemplatesService',
                                             data: request.data
                                         });
                                     });
-    
+
                                     return $q.all(associatePromises.concat(credentialPromises))
                                         .then(() => {
                                             Wait('stop');

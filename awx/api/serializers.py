@@ -3068,7 +3068,7 @@ class JobRelaunchSerializer(BaseSerializer):
         attrs = super(JobRelaunchSerializer, self).validate(attrs)
         return attrs
 
-
+# &&&&&&
 class JobCreateScheduleSerializer(BaseSerializer):
 
     can_schedule = serializers.SerializerMethodField()
@@ -3406,7 +3406,7 @@ class WorkflowApprovalTemplateSerializer(UnifiedJobTemplateSerializer):
 
     class Meta:
         model = WorkflowApprovalTemplate
-        fields = ('*',)
+        fields = ('*', 'timeout', 'name',)
 
     def get_related(self, obj):
         res = super(WorkflowApprovalTemplateSerializer, self).get_related(obj)
@@ -3420,6 +3420,15 @@ class WorkflowApprovalTemplateSerializer(UnifiedJobTemplateSerializer):
             notification_templates_error = self.reverse('api:workflow_approval_template_notification_templates_error_list', kwargs={'pk': obj.pk}),
         ))
         return res
+
+
+# class WorkflowJobTemplateApprovalSerializer(UnifiedJobTemplateSerializer):
+#     class Meta:
+#         model = WorkflowJobTemplateApproval
+#         fields = ('*',)
+#
+#     def post(self, obj):
+#         return  # POST only!!!
 
 
 class LaunchConfigurationBaseSerializer(BaseSerializer):
@@ -3567,6 +3576,7 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBaseSerializer):
 
     def get_related(self, obj):
         res = super(WorkflowJobTemplateNodeSerializer, self).get_related(obj)
+        res['create_approval_job_template'] = self.reverse('api:workflow_job_template_node_create_approval', kwargs={'pk': obj.pk})
         res['success_nodes'] = self.reverse('api:workflow_job_template_node_success_nodes_list', kwargs={'pk': obj.pk})
         res['failure_nodes'] = self.reverse('api:workflow_job_template_node_failure_nodes_list', kwargs={'pk': obj.pk})
         res['always_nodes'] = self.reverse('api:workflow_job_template_node_always_nodes_list', kwargs={'pk': obj.pk})
@@ -3692,6 +3702,13 @@ class WorkflowJobTemplateNodeDetailSerializer(WorkflowJobTemplateNodeSerializer)
             field_kwargs['read_only'] = True
             field_kwargs.pop('queryset', None)
         return field_class, field_kwargs
+
+# &&&&&&
+class WorkflowJobTemplateNodeCreateApprovalSerializer(BaseSerializer):
+
+    class Meta:
+        model = WorkflowApprovalTemplate
+        fields = ('timeout', 'name', 'description',)
 
 
 class JobListSerializer(JobSerializer, UnifiedJobListSerializer):

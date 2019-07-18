@@ -607,7 +607,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                                 name: $scope.nodeConfig.node.unifiedJobTemplate.name,
                                 description: $scope.nodeConfig.node.unifiedJobTemplate.description,
                             };
-                
+
                             $scope.nodeFormDataLoaded = true;
                         } else {
                             // Make sure that we have the full unified job template object
@@ -657,7 +657,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                             element: '#workflow_node_edge',
                             multiple: false
                         });
-            
+
                         $scope.nodeFormDataLoaded = true;
                     }
                 });
@@ -702,7 +702,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 return !$scope.inventoryNodeState.selectedTemplate;
             } else if ($scope.activeTab === "pause") {
                 return !($scope.pauseNodeState.name && $scope.pauseNodeState.name !== "");
-            } 
+            }
         };
 
         $scope.selectTemplate = (selectedTemplate) => {
