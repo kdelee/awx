@@ -3415,7 +3415,7 @@ class WorkflowApprovalTemplateSerializer(UnifiedJobTemplateSerializer):
 
         res.update(dict(
             jobs = self.reverse('api:workflow_approval_template_jobs_list', kwargs={'pk': obj.pk}),
-            notification_templates_started = self.reverse('api:workflow_approval_template_notification_templates_started_list', kwargs={'pk': obj.pk}),
+            notification_templates_needs_approval = self.reverse('api:workflow_approval_template_notification_templates_needs_approval', kwargs={'pk': obj.pk}),
             notification_templates_success = self.reverse('api:workflow_approval_template_notification_templates_success_list', kwargs={'pk': obj.pk}),
             notification_templates_error = self.reverse('api:workflow_approval_template_notification_templates_error_list', kwargs={'pk': obj.pk}),
         ))
@@ -3494,6 +3494,8 @@ class LaunchConfigurationBaseSerializer(BaseSerializer):
             ujt = attrs['unified_job_template']
         elif self.instance:
             ujt = self.instance.unified_job_template
+        if ujt is None:
+            return {'workflow_job_template': attrs['workflow_job_template']}
 
         # build additional field survey_passwords to track redacted variables
         password_dict = {}
@@ -3609,16 +3611,13 @@ class WorkflowJobTemplateNodeSerializer(LaunchConfigurationBaseSerializer):
         if 'credential' in attrs:  # TODO: remove when v2 API is deprecated
             deprecated_fields['credential'] = attrs.pop('credential')
         view = self.context.get('view')
-        if attrs.get('unified_job_template') is None:
-            return {'unified_job_template': None,
-                    'workflow_job_template': attrs.get('workflow_job_template'),}
         attrs = super(WorkflowJobTemplateNodeSerializer, self).validate(attrs)
         ujt_obj = None
         if 'unified_job_template' in attrs:
             ujt_obj = attrs['unified_job_template']
         elif self.instance:
             ujt_obj = self.instance.unified_job_template
-        if 'credential' in deprecated_fields:  # TODO: remove when v2 API is deprecated
+        if ujt_obj and 'credential' in deprecated_fields:  # TODO: remove when v2 API is deprecated
             cred = deprecated_fields['credential']
             attrs['credential'] = cred
             if cred is not None:

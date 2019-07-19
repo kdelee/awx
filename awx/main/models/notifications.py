@@ -226,10 +226,14 @@ class JobNotificationMixin(object):
     def build_notification_running_message(self):
         return self._build_notification_message('running')
 
+    # &&&&&& Placeholder for notification work (more commented placeholder code below)
+    # def build_notification_needs_approval_message(self):
+    #     return self._build_notification_message('pending')
+
     def send_notification_templates(self, status_str):
         from awx.main.tasks import send_notifications  # avoid circular import
-        if status_str not in ['succeeded', 'failed', 'running']:
-            raise ValueError(_("status_str must be either running, succeeded or failed"))
+        # if status_str not in ['succeeded', 'failed', 'running', 'pending']:
+        #     raise ValueError(_("status_str must be either running, pending, succeeded or failed"))
         try:
             notification_templates = self.get_notification_templates()
         except Exception:
@@ -240,6 +244,8 @@ class JobNotificationMixin(object):
                 notification_template_type = 'success'
             elif status_str == 'running':
                 notification_template_type = 'started'
+            # elif status_str == 'pending':
+            #     notification_template_type = 'needs_approval'
             else:
                 notification_template_type = 'error'
             all_notification_templates = set(notification_templates.get(notification_template_type, []))
