@@ -226,10 +226,6 @@ class JobNotificationMixin(object):
     def build_notification_running_message(self):
         return self._build_notification_message('running')
 
-    # &&&&&& Placeholder for notification work (more commented placeholder code below)
-    # def build_notification_needs_approval_message(self):
-    #     return self._build_notification_message('pending')
-
     def send_notification_templates(self, status_str):
         from awx.main.tasks import send_notifications  # avoid circular import
         # if status_str not in ['succeeded', 'failed', 'running', 'pending']:
