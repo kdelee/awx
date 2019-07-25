@@ -3425,13 +3425,13 @@ class WorkflowApprovalTemplateSerializer(UnifiedJobTemplateSerializer):
         return res
 
 
-# class WorkflowJobTemplateApprovalSerializer(UnifiedJobTemplateSerializer):
-#     class Meta:
-#         model = WorkflowJobTemplateApproval
-#         fields = ('*',)
-#
-#     def post(self, obj):
-#         return  # POST only!!!
+class WorkflowJobTemplateApprovalSerializer(UnifiedJobTemplateSerializer):
+    class Meta:
+        model = WorkflowApprovalTemplate
+        fields = ('*',)
+
+    def post(self, obj):
+        return  # POST only!!!
 
 
 class LaunchConfigurationBaseSerializer(BaseSerializer):
@@ -4659,7 +4659,8 @@ class ActivityStreamSerializer(BaseSerializer):
             ('o_auth2_access_token', ('id', 'user_id', 'description', 'application_id', 'scope')),
             ('o_auth2_application', ('id', 'name', 'description')),
             ('credential_type', ('id', 'name', 'description', 'kind', 'managed_by_tower')),
-            ('ad_hoc_command', ('id', 'name', 'status', 'limit'))
+            ('ad_hoc_command', ('id', 'name', 'status', 'limit')),
+            ('workflow_approval', ('id', 'unified_job_id')),
         ]
         return field_list
 
@@ -4768,6 +4769,7 @@ class ActivityStreamSerializer(BaseSerializer):
     def _summarize_parent_ujt(self, obj, fk, summary_fields):
         summary_keys = {'job': 'job_template',
                         'workflow_job_template_node': 'workflow_job_template',
+                        'workflow_approval': 'workflow_approval_template',
                         'schedule': 'unified_job_template'}
         if fk not in summary_keys:
             return
