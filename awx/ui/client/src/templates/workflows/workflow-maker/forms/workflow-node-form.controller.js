@@ -491,7 +491,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
             $scope.approvalNodeState = {
                 name: null,
                 description: null,
-                timeout: null
+                timeout: 0
             };
             $scope.nodeFormDataLoaded = false;
             $scope.wf_maker_template_queryset = {
@@ -662,7 +662,7 @@ export default ['$scope', 'TemplatesService', 'JobTemplateModel', 'PromptService
                 $scope.approvalNodeState = {
                     name: null,
                     description: null,
-                    timeout: null
+                    timeout: 0
                 };
                 $scope.editNodeHelpMessage = getEditNodeHelpMessage(selectedTemplate, $scope.workflowJobTemplateObj);
 

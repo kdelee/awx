@@ -30,7 +30,7 @@
                     <div class="List-lookupLayout List-tableHeaderRow">
                         <div></div>
                         <div class="d-flex h-100">
-                            <div class="col-md-8" base-path="unified_job_templates" collection="wf_maker_templates" dataset="wf_maker_template_dataset" column-sort="" column-field="name" column-iterator="wf_maker_template" column-no-sort="undefined" column-label="Name" column-custom-class="" query-set="wf_maker_template_queryset"></div>
+                            <div class="col-md-8" base-path="unified_job_templates" collection="wf_maker_templates" dataset="wf_maker_template_dataset" column-sort="" column-field="name" column-iterator="wf_maker_template" column-no-sort="undefined" column-label="{{:: strings.get('workflow_maker.NAME') }}" column-custom-class="" query-set="wf_maker_template_queryset"></div>
                             <div class="List-tableHeader--info col-md-4" base-path="unified_job_templates" collection="wf_maker_templates" dataset="wf_maker_template_dataset" column-sort="" column-field="info" column-iterator="wf_maker_template" column-no-sort="true" column-label="" column-custom-class="" query-set="wf_maker_template_queryset"></div>
                         </div>
                     </div>
@@ -61,13 +61,13 @@
             <div class="row" ng-show="wf_maker_projects.length === 0 && !(projectNodeState.searchTags | isEmpty)">
                 <div class="col-lg-12 List-searchNoResults" translate>No records matched your search.</div>
             </div>
-            <div class="List-noItems" ng-show="wf_maker_projects.length === 0 && (projectNodeState.searchTags | isEmpty)">No Projects Have Been Created</div>
+            <div class="List-noItems" ng-show="wf_maker_projects.length === 0 && (projectNodeState.searchTags | isEmpty)" translate>No Projects Have Been Created</div>
             <div class="list-table-container" ng-show="wf_maker_projects.length > 0">
                 <div id="projects_table" class="List-table" is-extended="false">
                     <div class="List-lookupLayout List-tableHeaderRow">
                         <div></div>
                         <div class="d-flex h-100">
-                            <div base-path="projects" collection="wf_maker_projects" dataset="wf_maker_project_dataset" column-sort="" column-field="name" column-iterator="wf_maker_project" column-no-sort="undefined" column-label="Name" column-custom-class="col-md-12" query-set="wf_maker_project_queryset"></div>
+                            <div base-path="projects" collection="wf_maker_projects" dataset="wf_maker_project_dataset" column-sort="" column-field="name" column-iterator="wf_maker_project" column-no-sort="undefined" column-label="{{:: strings.get('workflow_maker.NAME') }}" column-custom-class="col-md-12" query-set="wf_maker_project_queryset"></div>
                         </div>
                     </div>
                     <div ng-class="[wf_maker_project.success_class, {'List-tableRow--selected' : $stateParams['project_id'] == wf_maker_project.id}]" id="{{ wf_maker_project.id }}" class="List-lookupLayout List-tableRow project_class" ng-repeat="wf_maker_project in wf_maker_projects">
@@ -91,13 +91,13 @@
             <div class="row" ng-show="wf_maker_inventory_sources.length === 0 && !(inventoryNodeState.searchTags | isEmpty)">
                 <div class="col-lg-12 List-searchNoResults" translate>No records matched your search.</div>
             </div>
-            <div class="List-noItems" ng-show="wf_maker_inventory_sources.length === 0 && (inventoryNodeState.searchTags | isEmpty)">PLEASE ADD ITEMS TO THIS LIST</div>
+            <div class="List-noItems" ng-show="wf_maker_inventory_sources.length === 0 && (inventoryNodeState.searchTags | isEmpty)" translate>PLEASE ADD ITEMS TO THIS LIST</div>
             <div class="list-table-container" ng-show="wf_maker_inventory_sources.length > 0">
                 <div id="workflow_inventory_sources_table" class="List-table" is-extended="false">
                     <div class="List-lookupLayout List-tableHeaderRow">
                         <div></div>
                         <div class="d-flex h-100">
-                            <div base-path="inventory_sources" collection="wf_maker_inventory_sources" dataset="wf_maker_inventory_source_dataset" column-sort="" column-field="name" column-iterator="wf_maker_inventory_source" column-no-sort="undefined" column-label="Name" column-custom-class="" query-set="wf_maker_inventory_source_queryset"></div>
+                            <div base-path="inventory_sources" collection="wf_maker_inventory_sources" dataset="wf_maker_inventory_source_dataset" column-sort="" column-field="name" column-iterator="wf_maker_inventory_source" column-no-sort="undefined" column-label="{{:: strings.get('workflow_maker.NAME') }}" column-custom-class="" query-set="wf_maker_inventory_source_queryset"></div>
                         </div>
                     </div>
                     <div ng-class="[wf_maker_inventory_source.success_class, {'List-tableRow--selected' : $stateParams['inventory_source_id'] == wf_maker_inventory_source.id}]" id="{{ wf_maker_inventory_source.id }}" class="List-lookupLayout List-tableRow inventory_source_class" ng-repeat="wf_maker_inventory_source in wf_maker_inventory_sources">
@@ -116,8 +116,7 @@
             <div class="form-group Form-formGroup Form-formGroup--singleColumn">
                 <label for="pauseName" class="Form-inputLabelContainer">
                         <span class="Form-requiredAsterisk">*</span>
-                        <!-- translate -->
-                        <span class="Form-inputLabel">Name</span>
+                        <span class="Form-inputLabel" translate>Name</span>
                     </label>
                     <div>
                         <input type="text" ng-model="approvalNodeState.name" name="pauseName" id="workflow_job_template_pauseName" class="form-control Form-textInput" />
@@ -126,8 +125,7 @@
             </div>
             <div class="form-group Form-formGroup Form-formGroup--singleColumn">
                 <label for="pauseDesc" class="Form-inputLabelContainer">
-                        <!-- translate -->
-                        <span class="Form-inputLabel">Description</span>
+                        <span class="Form-inputLabel" translate>Description</span>
                     </label>
                     <div>
                         <input type="text" ng-model="approvalNodeState.description" name="pauseDesc" id="workflow_job_template_pauseDesc" class="form-control Form-textInput" />
@@ -136,8 +134,10 @@
             </div>
             <div class="form-group Form-formGroup Form-formGroup--singleColumn">
                 <label for="pauseTimeout" class="Form-inputLabelContainer">
-                    <!-- translate -->
-                    <span class="Form-inputLabel">Timeout</span>
+                    <span class="Form-inputLabel" translate>Timeout</span>
+                    <a id="workflow-maker-timeout-popover" href="" aw-pop-over="{{:: strings.get('workflow_maker.TIMEOUT_POPOVER') }}" data-placement="top" data-container="body" over-title="{{:: strings.get('workflow_maker.TIMEOUT') }}" class="help-link">
+                        <i class="fa fa-question-circle"></i>
+                    </a>
                 </label>
                 <div>
                     <input type="number" value="0" min="0" ng-model="approvalNodeState.timeout" name="pauseTimeout" id="workflow_job_template_pauseTimeout" aw-spinner="pauseTimeout" integer />
