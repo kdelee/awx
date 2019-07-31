@@ -218,7 +218,7 @@ export default ['$scope', 'TemplatesService',
                                     });
                                 }));
                             } else {
-                                Rest.setUrl(newNodeData.related.create_approval_template);
+                                Rest.setUrl(node.originalNodeObject.related.create_approval_template);
                                 approvalTemplatePromises.push(Rest.post({
                                     name: node.unifiedJobTemplate.name,
                                     description: node.unifiedJobTemplate.description,
