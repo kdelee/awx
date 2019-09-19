@@ -153,7 +153,6 @@ from awx.api.views.webhooks import ( # noqa
     WebhookKeyView,
     GithubWebhookReceiver,
     GitlabWebhookReceiver,
-    BitbucketWebhookReceiver,
 )
 
 
