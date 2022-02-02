@@ -527,12 +527,13 @@ class TaskManager:
                 if settings.IS_K8S and task.capacity_type == 'execution':
                     logger.debug("Skipping group {}, task cannot run on control plane".format(rampart_group.name))
                     continue
-
+                # at this point we know the instance group is NOT a container group
+                # because if it was, it would have started the task and broke out of the loop.
                 execution_instance = InstanceGroup.fit_task_to_most_remaining_capacity_instance(
                     task, self.graph[rampart_group.name]['instances']
                 ) or InstanceGroup.find_largest_idle_instance(self.graph[rampart_group.name]['instances'], capacity_type=task.capacity_type)
 
-                if execution_instance or rampart_group.is_container_group:
+                if execution_instance:
                     # If our execution instance is a hybrid, prefer to do control tasks there as well.
                     if (
                         execution_instance.node_type == 'hybrid'
@@ -541,19 +542,18 @@ class TaskManager:
                         control_instance = execution_instance
                         task.controller_node = execution_instance.hostname
 
-                    if not rampart_group.is_container_group:
-                        control_instance.remaining_capacity = max(0, control_instance.remaining_capacity - settings.AWX_CONTROL_PLANE_TASK_IMPACT)
-                        task.log_lifecycle("controller_node_chosen")
-                        if control_instance != execution_instance:
-                            control_instance.jobs_running += 1
-                        execution_instance.remaining_capacity = max(0, execution_instance.remaining_capacity - task.task_impact)
-                        execution_instance.jobs_running += 1
-                        task.log_lifecycle("execution_node_chosen")
-                        logger.debug(
-                            "Starting {} in group {} instance {} (remaining_capacity={})".format(
-                                task.log_format, rampart_group.name, execution_instance.hostname, remaining_capacity
-                            )
+                    control_instance.remaining_capacity = max(0, control_instance.remaining_capacity - settings.AWX_CONTROL_PLANE_TASK_IMPACT)
+                    task.log_lifecycle("controller_node_chosen")
+                    if control_instance != execution_instance:
+                        control_instance.jobs_running += 1
+                    execution_instance.remaining_capacity = max(0, execution_instance.remaining_capacity - task.task_impact)
+                    execution_instance.jobs_running += 1
+                    task.log_lifecycle("execution_node_chosen")
+                    logger.debug(
+                        "Starting {} in group {} instance {} (remaining_capacity={})".format(
+                            task.log_format, rampart_group.name, execution_instance.hostname, remaining_capacity
                         )
+                    )
 
                     if execution_instance:
                         execution_instance = self.real_instances[execution_instance.hostname]
