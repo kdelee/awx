@@ -459,6 +459,7 @@ class TaskManager:
     def process_pending_tasks(self, pending_tasks):
         running_workflow_templates = {wf.unified_job_template_id for wf in self.get_running_workflow_jobs()}
         tasks_to_update_job_explanation = []
+        controlplane_ig = InstanceGroup.objects.get(name='controlplane')
         for task in pending_tasks:
             if self.start_task_limit <= 0:
                 break
@@ -500,31 +501,30 @@ class TaskManager:
 
             task.controller_node = control_instance.hostname
 
-            for rampart_group in preferred_instance_groups:
-                if task.capacity_type == 'execution' and rampart_group.is_container_group:
-                    self.graph[rampart_group.name]['graph'].add_job(task)
-                    self.start_task(task, rampart_group, task.get_jobs_fail_chain(), None)
-                    found_acceptable_queue = True
+            # All task.capacity_type == 'control' jobs should run on control plane, no need to loop over instance groups
+            if task.capacity_type == 'control':
+                # This is a task that actually needs to run in the controlplane
+                is_idle = control_instance.jobs_running == 0
+                has_capacity_for_task_impact_and_control = control_instance.remaining_capacity >= (task.task_impact + settings.AWX_CONTROL_NODE_TASK_IMPACT)
+                if not has_capacity_for_task_impact_and_control and not is_idle:
+                    # As in other places, we accept an idle instance if the node with most capacity (the control node we already selected)
+                    # does not have enough capacity.
+                    logger.debug(f"Not enough control capacity on {control_instance} to run {task.log_format}")
                     break
+                task.execution_node = control_instance.hostname
+                control_instance.remaining_capacity = max(0, control_instance.remaining_capacity - (task.task_impact + settings.AWX_CONTROL_PLANE_TASK_IMPACT))
+                control_instance.jobs_running += 1
+                self.graph['controlplane']['graph'].add_job(task)
+                execution_instance = self.real_instances[control_instance.hostname]
+                self.start_task(task, controlplane_ig, task.get_jobs_fail_chain(), execution_instance)
+                found_acceptable_queue = True
+                continue
 
-                if task.capacity_type != 'execution' and rampart_group.is_container_group:
-                    # This is a task that actually needs to run in the controlplane, like a project update for a container_group job
-                    if (
-                        not control_instance.remaining_capacity >= task.task_impact + settings.AWX_CONTROL_NODE_TASK_IMPACT
-                        and not control_instance.jobs_running == 0
-                    ):
-                        # As in other places, we accept an idle instance if the node with most capacity (the control node we already selected)
-                        # does not have enough capacity.
-                        logger.debug(f"Not enough control capacity on {control_instance} to run {task.log_format}")
-                        break
-                    task.execution_node = control_instance
-                    control_instance.remaining_capacity = max(
-                        0, control_instance.remaining_capacity - (task.task_impact + settings.AWX_CONTROL_PLANE_TASK_IMPACT)
-                    )
+            for rampart_group in preferred_instance_groups:
+                if rampart_group.is_container_group:
                     control_instance.jobs_running += 1
                     self.graph['controlplane']['graph'].add_job(task)
-                    execution_instance = self.real_instances[control_instance.hostname]
-                    self.start_task(task, 'controlplane', task.get_jobs_fail_chain(), execution_instance)
+                    self.start_task(task, rampart_group, task.get_jobs_fail_chain(), None)
                     found_acceptable_queue = True
                     break
 
