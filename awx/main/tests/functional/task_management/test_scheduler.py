@@ -7,7 +7,7 @@ from awx.main.scheduler import TaskManager
 from awx.main.scheduler.dependency_graph import DependencyGraph
 from awx.main.utils import encrypt_field
 from awx.main.models import WorkflowJobTemplate, JobTemplate, Job
-from awx.main.models.ha import Instance, InstanceGroup
+from awx.main.models.ha import Instance
 
 
 @pytest.mark.django_db

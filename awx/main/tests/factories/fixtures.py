@@ -35,7 +35,7 @@ def mk_instance(persisted=True, hostname='instance.example.org', node_type='hybr
 
     instance = Instance.objects.get_or_create(uuid=settings.SYSTEM_UUID, hostname=hostname, node_type=node_type, capacity=capacity)[0]
     if node_type in ('control', 'hybrid'):
-        controlplane_ig = mk_instance_group(name='controlplane', instance=instance)
+        mk_instance_group(name='controlplane', instance=instance)
     return instance
 
 
