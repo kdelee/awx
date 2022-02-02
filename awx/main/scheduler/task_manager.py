@@ -551,7 +551,7 @@ class TaskManager:
                     task.log_lifecycle("execution_node_chosen")
                     logger.debug(
                         "Starting {} in group {} instance {} (remaining_capacity={})".format(
-                            task.log_format, rampart_group.name, execution_instance.hostname, remaining_capacity
+                            task.log_format, rampart_group.name, execution_instance.hostname, execution_instance.remaining_capacity
                         )
                     )
 
