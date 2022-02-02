@@ -284,12 +284,10 @@ class TaskManager:
                 logger.debug('Transitioning %s to running status.', task.log_format)
                 schedule_task_manager()
             # at this point we already have control/execution nodes selected for the following cases
-            elif rampart_group.is_container_group:
-                task.instance_group = rampart_group
-                logger.debug('Submitting containerized {} to queue {}.'.format(task.log_format, task.execution_node))
             else:
                 task.instance_group = rampart_group
-                logger.debug('Submitting job {} to queue {} controlled by {}.'.format(task.log_format, task.execution_node, task.controller_node))
+                queue_submitted_to = task.execution_node if task.execution_node else rampart_group.name
+                logger.debug(f'Submitting job {task.log_format} to queue {queue_submitted_to} controlled by {task.controller_node}.')
             with disable_activity_stream():
                 task.celery_task_id = str(uuid.uuid4())
                 task.save()
