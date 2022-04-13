@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from decimal import Decimal
 
 from awx.main.models import InstanceGroup, Instance
+from awx.main.scheduler.task_manager_models import TaskManagerInstanceGroups
 
 
 @pytest.mark.parametrize('capacity_adjustment', [0.0, 0.25, 0.5, 0.75, 1, 1.5, 3])
@@ -48,6 +49,7 @@ def Is(param):
 
 
 class TestInstanceGroup(object):
+    @pytest.mark.django_db
     @pytest.mark.parametrize(
         'task,instances,instance_fit_index,reason',
         [
@@ -59,15 +61,17 @@ class TestInstanceGroup(object):
         ],
     )
     def test_fit_task_to_most_remaining_capacity_instance(self, task, instances, instance_fit_index, reason):
-        ig = InstanceGroup(id=10)
+        InstanceGroup(id=10)
+        tm_igs = TaskManagerInstanceGroups([])
 
-        instance_picked = ig.fit_task_to_most_remaining_capacity_instance(task, instances)
+        instance_picked = tm_igs.fit_task_to_most_remaining_capacity_instance(task, instances=instances)
 
         if instance_fit_index is None:
             assert instance_picked is None, reason
         else:
             assert instance_picked == instances[instance_fit_index], reason
 
+    @pytest.mark.django_db
     @pytest.mark.parametrize(
         'instances,instance_fit_index,reason',
         [
@@ -82,13 +86,14 @@ class TestInstanceGroup(object):
         def filter_offline_instances(*args):
             return filter(lambda i: i.capacity > 0, instances)
 
-        ig = InstanceGroup(id=10)
+        InstanceGroup(id=10)
         instances_online_only = filter_offline_instances(instances)
+        tm_igs = TaskManagerInstanceGroups([])
 
         if instance_fit_index is None:
-            assert ig.find_largest_idle_instance(instances_online_only) is None, reason
+            assert tm_igs.find_largest_idle_instance(instances=instances_online_only) is None, reason
         else:
-            assert ig.find_largest_idle_instance(instances_online_only) == instances[instance_fit_index], reason
+            assert tm_igs.find_largest_idle_instance(instances=instances_online_only) == instances[instance_fit_index], reason
 
 
 def test_cleanup_params_defaults():
