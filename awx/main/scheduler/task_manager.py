@@ -67,8 +67,8 @@ class TaskManager:
         Init AFTER we know this instance of the task manager will run because the lock is acquired.
         """
         self.dependency_graph = DependencyGraph()
-        self.instances = TaskManagerInstances()
-        self.instance_groups = TaskManagerInstanceGroups(self.instances)
+        self.instances = TaskManagerInstances(all_sorted_tasks)
+        self.instance_groups = TaskManagerInstanceGroups(instances_by_hostname=self.instances)
         self.controlplane_ig = self.instance_groups.controlplane_ig
 
     def job_blocked_by(self, task):
@@ -459,7 +459,7 @@ class TaskManager:
             else:
                 control_impact = settings.AWX_CONTROL_NODE_TASK_IMPACT
             control_instance = self.instance_groups.fit_task_to_most_remaining_capacity_instance(
-                task, instance_group_name=settings.DEFAULT_CONTROL_PLANE_QUEUE_NAME, impact=control_impact, capacity_type='control'
+                task=task, instance_group_name=settings.DEFAULT_CONTROL_PLANE_QUEUE_NAME, impact=control_impact, capacity_type='control'
             )
             if not control_instance:
                 self.task_needs_capacity(task, tasks_to_update_job_explanation)
@@ -494,7 +494,7 @@ class TaskManager:
                 # at this point we know the instance group is NOT a container group
                 # because if it was, it would have started the task and broke out of the loop.
                 execution_instance = self.instance_groups.fit_task_to_most_remaining_capacity_instance(
-                    task, instance_group_name=instance_group.name, add_hybrid_control_cost=True
+                    task=task, instance_group_name=instance_group.name, add_hybrid_control_cost=True
                 ) or self.instance_groups.find_largest_idle_instance(instance_group_name=instance_group.name, capacity_type=task.capacity_type)
 
                 if execution_instance:
