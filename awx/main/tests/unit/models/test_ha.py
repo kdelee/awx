@@ -62,7 +62,7 @@ class TestInstanceGroup(object):
     )
     def test_fit_task_to_most_remaining_capacity_instance(self, task, instances, instance_fit_index, reason):
         InstanceGroup(id=10)
-        tm_igs = TaskManagerInstanceGroups([])
+        tm_igs = TaskManagerInstanceGroups(instance_groups={'controlplane': instances})
 
         instance_picked = tm_igs.fit_task_to_most_remaining_capacity_instance(task, instances=instances)
 

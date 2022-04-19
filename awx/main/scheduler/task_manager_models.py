@@ -67,29 +67,28 @@ class TaskManagerInstances:
 class TaskManagerInstanceGroups:
     """A class representing minimal data the task manager needs to represent an InstanceGroup."""
 
-    def __init__(self, instances_by_hostname=None):
+    def __init__(self, instances_by_hostname=None, instance_groups=None):
         self.instance_groups = dict()
         self.controlplane_ig = None
 
-        for instance_group in InstanceGroup.objects.prefetch_related('instances').only('name', 'instances'):
-            if instance_group.name == settings.DEFAULT_CONTROL_PLANE_QUEUE_NAME:
-                self.controlplane_ig = instance_group
-            self.instance_groups[instance_group.name] = dict(
-                instances=[
-                    instances_by_hostname[instance.hostname] for instance in instance_group.instances.all() if instance.hostname in instances_by_hostname
-                ],
-            )
+        if instance_groups is not None:  # for testing
+            self.instance_groups = instance_groups
+        else:
+            for instance_group in InstanceGroup.objects.prefetch_related('instances').only('name', 'instances'):
+                if instance_group.name == settings.DEFAULT_CONTROL_PLANE_QUEUE_NAME:
+                    self.controlplane_ig = instance_group
+                self.instance_groups[instance_group.name] = dict(
+                    instances=[
+                        instances_by_hostname[instance.hostname] for instance in instance_group.instances.all() if instance.hostname in instances_by_hostname
+                    ],
+                )
 
-    def fit_task_to_most_remaining_capacity_instance(
-        self, task=None, instance_group_name=None, impact=None, capacity_type=None, add_hybrid_control_cost=False, instances=None
-    ):
+    def fit_task_to_most_remaining_capacity_instance(self, task, instance_group_name, impact=None, capacity_type=None, add_hybrid_control_cost=False):
         impact = impact if impact else task.task_impact
         capacity_type = capacity_type if capacity_type else task.capacity_type
         instance_most_capacity = None
         most_remaining_capacity = -1
-        if not (instances or instance_group_name):
-            raise RuntimeError("Need to provide either the name of an instance group or a list of instances")
-        instances = instances if instances else self.instance_groups[instance_group_name]['instances']
+        instances = self.instance_groups[instance_group_name]['instances']
 
         for i in instances:
             if i.node_type not in (capacity_type, 'hybrid'):
@@ -103,11 +102,9 @@ class TaskManagerInstanceGroups:
                 most_remaining_capacity = would_be_remaining
         return instance_most_capacity
 
-    def find_largest_idle_instance(self, instance_group_name=None, capacity_type='execution', instances=None):
+    def find_largest_idle_instance(self, instance_group_name, capacity_type='execution'):
         largest_instance = None
-        if not (instances or instance_group_name):
-            raise RuntimeError("Need to provide either the name of an instance group or a list of instances")
-        instances = instances if instances else self.instance_groups[instance_group_name]['instances']
+        instances = self.instance_groups[instance_group_name]['instances']
         for i in instances:
             if i.node_type not in (capacity_type, 'hybrid'):
                 continue
