@@ -15,7 +15,7 @@ logger = logging.getLogger('awx.main.scheduler')
 class TaskManagerInstance:
     """A class representing minimal data the task manager needs to represent an Instance."""
 
-    def __init__(self, obj, node_type, capacity, hostname):
+    def __init__(self, obj=None, node_type=None, capacity=None, hostname=None):
         self.obj = obj
         self.node_type = node_type
         self.remaining_capacity = capacity
@@ -24,7 +24,7 @@ class TaskManagerInstance:
 
 
 class TaskManagerInstances:
-    def __init__(self, active_tasks=[]):
+    def __init__(self, active_tasks):
         instances = Instance.objects.filter(hostname__isnull=False, enabled=True).exclude(node_type='hop').only('node_type', 'capacity', 'hostname', 'enabled')
         self._remaining_capacity_updated = False
         instance_list = [
@@ -67,7 +67,7 @@ class TaskManagerInstances:
 class TaskManagerInstanceGroups:
     """A class representing minimal data the task manager needs to represent an InstanceGroup."""
 
-    def __init__(self, instances_by_hostname):
+    def __init__(self, instances_by_hostname=None):
         self.instance_groups = dict()
         self.controlplane_ig = None
 
@@ -80,11 +80,8 @@ class TaskManagerInstanceGroups:
                 ],
             )
 
-    def __getitem__(self, instance_group_name):
-        return self.instance_groups.get(instance_group_name)
-
     def fit_task_to_most_remaining_capacity_instance(
-        self, task, instance_group_name=None, impact=None, capacity_type=None, add_hybrid_control_cost=False, instances=[]
+        self, task=None, instance_group_name=None, impact=None, capacity_type=None, add_hybrid_control_cost=False, instances=None
     ):
         impact = impact if impact else task.task_impact
         capacity_type = capacity_type if capacity_type else task.capacity_type
@@ -105,7 +102,7 @@ class TaskManagerInstanceGroups:
                 most_remaining_capacity = would_be_remaining
         return instance_most_capacity
 
-    def find_largest_idle_instance(self, instance_group_name=None, capacity_type='execution', instances=[]):
+    def find_largest_idle_instance(self, instance_group_name=None, capacity_type='execution', instances=None):
         largest_instance = None
         assert instances or instance_group_name, "Need to provide either the name of an instance group or a list of instances"
         instances = instances if instances else self.instance_groups[instance_group_name]['instances']
