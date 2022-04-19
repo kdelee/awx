@@ -87,7 +87,8 @@ class TaskManagerInstanceGroups:
         capacity_type = capacity_type if capacity_type else task.capacity_type
         instance_most_capacity = None
         most_remaining_capacity = -1
-        assert instances or instance_group_name, "Need to provide either the name of an instance group or a list of instances"
+        if not (instances or instance_group_name):
+            raise RuntimeError("Need to provide either the name of an instance group or a list of instances")
         instances = instances if instances else self.instance_groups[instance_group_name]['instances']
 
         for i in instances:
@@ -104,7 +105,8 @@ class TaskManagerInstanceGroups:
 
     def find_largest_idle_instance(self, instance_group_name=None, capacity_type='execution', instances=None):
         largest_instance = None
-        assert instances or instance_group_name, "Need to provide either the name of an instance group or a list of instances"
+        if not (instances or instance_group_name):
+            raise RuntimeError("Need to provide either the name of an instance group or a list of instances")
         instances = instances if instances else self.instance_groups[instance_group_name]['instances']
         for i in instances:
             if i.node_type not in (capacity_type, 'hybrid'):
