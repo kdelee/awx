@@ -124,17 +124,32 @@ class TaskManager:
 
     @timeit
     def get_tasks(self, status_list=('pending', 'waiting', 'running')):
-        jobs = [j for j in Job.objects.filter(status__in=status_list).prefetch_related('instance_group')]
-        inventory_updates_qs = (
-            InventoryUpdate.objects.filter(status__in=status_list).exclude(source='file').prefetch_related('inventory_source', 'instance_group')
-        )
-        inventory_updates = [i for i in inventory_updates_qs]
-        # Notice the job_type='check': we want to prevent implicit project updates from blocking our jobs.
-        project_updates = [p for p in ProjectUpdate.objects.filter(status__in=status_list, job_type='check').prefetch_related('instance_group')]
-        system_jobs = [s for s in SystemJob.objects.filter(status__in=status_list).prefetch_related('instance_group')]
-        ad_hoc_commands = [a for a in AdHocCommand.objects.filter(status__in=status_list).prefetch_related('instance_group')]
-        workflow_jobs = [w for w in WorkflowJob.objects.filter(status__in=status_list)]
-        all_tasks = sorted(jobs + project_updates + inventory_updates + system_jobs + ad_hoc_commands + workflow_jobs, key=lambda task: task.created)
+        all_tasks = []
+
+        def _get_tasks(status_list, limit=None):
+            jobs = [j for j in Job.objects.filter(status__in=status_list).prefetch_related('instance_group').order_by('created')[:limit]]
+            inventory_updates_qs = (
+                InventoryUpdate.objects.filter(status__in=status_list)
+                .exclude(source='file')
+                .prefetch_related('inventory_source', 'instance_group')
+                .order_by('created')[:limit]
+            )
+            inventory_updates = [i for i in inventory_updates_qs]
+            # Notice the job_type='check': we want to prevent implicit project updates from blocking our jobs.
+            project_updates = [
+                p for p in ProjectUpdate.objects.filter(status__in=status_list, job_type='check').prefetch_related('instance_group').order_by('created')[:limit]
+            ]
+            system_jobs = [s for s in SystemJob.objects.filter(status__in=status_list).prefetch_related('instance_group').order_by('created')[:limit]]
+            ad_hoc_commands = [a for a in AdHocCommand.objects.filter(status__in=status_list).prefetch_related('instance_group').order_by('created')[:limit]]
+            workflow_jobs = [w for w in WorkflowJob.objects.filter(status__in=status_list).order_by('created')[:limit]]
+            all_tasks = sorted(jobs + project_updates + inventory_updates + system_jobs + ad_hoc_commands + workflow_jobs, key=lambda task: task.created)
+            return all_tasks
+
+        if 'pending' in status_list:
+            all_tasks.extend(_get_tasks(['pending'], limit=self.start_task_limit))
+
+        all_tasks.extend(_get_tasks(tuple(s for s in status_list if s != 'pending')))
+
         return all_tasks
 
     def get_running_workflow_jobs(self):
