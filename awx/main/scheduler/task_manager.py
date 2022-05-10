@@ -41,6 +41,20 @@ from awx.main.utils import decrypt_field
 
 
 logger = logging.getLogger('awx.main.scheduler')
+perf_logger = logging.getLogger('awx.analytics.performance')
+
+
+def perf_logger_timer(func):
+    def inner(*args, **kwargs):
+        start = tz_now()
+        result = func(*args, **kwargs)
+        cls = args[0]
+        perf_logger.debug(
+            f'{{"func": task_manager.{func.__name__}, "duration": {tz_now() - start}, "pending_task_count": {cls.pending_task_count}, "running_task_count": {cls.running_task_count}}}'
+        )
+        return result
+
+    return inner
 
 
 class TaskManager:
@@ -61,7 +75,10 @@ class TaskManager:
         # will no longer be started and will be started on the next task manager cycle.
         self.start_task_limit = settings.START_TASK_LIMIT
         self.time_delta_job_explanation = timedelta(seconds=30)
+        self.pending_task_count = 0
+        self.running_task_count = 0
 
+    @perf_logger_timer
     def after_lock_init(self, all_sorted_tasks):
         """
         Init AFTER we know this instance of the task manager will run because the lock is acquired.
@@ -86,18 +103,34 @@ class TaskManager:
 
         return None
 
+    @perf_logger_timer
     def get_tasks(self, status_list=('pending', 'waiting', 'running')):
-        jobs = [j for j in Job.objects.filter(status__in=status_list).prefetch_related('instance_group')]
-        inventory_updates_qs = (
-            InventoryUpdate.objects.filter(status__in=status_list).exclude(source='file').prefetch_related('inventory_source', 'instance_group')
-        )
-        inventory_updates = [i for i in inventory_updates_qs]
-        # Notice the job_type='check': we want to prevent implicit project updates from blocking our jobs.
-        project_updates = [p for p in ProjectUpdate.objects.filter(status__in=status_list, job_type='check').prefetch_related('instance_group')]
-        system_jobs = [s for s in SystemJob.objects.filter(status__in=status_list).prefetch_related('instance_group')]
-        ad_hoc_commands = [a for a in AdHocCommand.objects.filter(status__in=status_list).prefetch_related('instance_group')]
-        workflow_jobs = [w for w in WorkflowJob.objects.filter(status__in=status_list)]
-        all_tasks = sorted(jobs + project_updates + inventory_updates + system_jobs + ad_hoc_commands + workflow_jobs, key=lambda task: task.created)
+        all_tasks = []
+
+        def _get_tasks(status_list, limit=None):
+            jobs = [j for j in Job.objects.filter(status__in=status_list).prefetch_related('instance_group').order_by('created')[:limit]]
+            inventory_updates_qs = (
+                InventoryUpdate.objects.filter(status__in=status_list)
+                .exclude(source='file')
+                .prefetch_related('inventory_source', 'instance_group')
+                .order_by('created')[:limit]
+            )
+            inventory_updates = [i for i in inventory_updates_qs]
+            # Notice the job_type='check': we want to prevent implicit project updates from blocking our jobs.
+            project_updates = [
+                p for p in ProjectUpdate.objects.filter(status__in=status_list, job_type='check').prefetch_related('instance_group').order_by('created')[:limit]
+            ]
+            system_jobs = [s for s in SystemJob.objects.filter(status__in=status_list).prefetch_related('instance_group').order_by('created')[:limit]]
+            ad_hoc_commands = [a for a in AdHocCommand.objects.filter(status__in=status_list).prefetch_related('instance_group').order_by('created')[:limit]]
+            workflow_jobs = [w for w in WorkflowJob.objects.filter(status__in=status_list).order_by('created')[:limit]]
+            all_tasks = sorted(jobs + project_updates + inventory_updates + system_jobs + ad_hoc_commands + workflow_jobs, key=lambda task: task.created)
+            return all_tasks
+
+        if 'pending' in status_list:
+            all_tasks.extend(_get_tasks(['pending'], limit=self.start_task_limit))
+
+        all_tasks.extend(_get_tasks(tuple(s for s in status_list if s != 'pending')))
+
         return all_tasks
 
     def get_running_workflow_jobs(self):
@@ -111,6 +144,7 @@ class TaskManager:
                 inventory_ids.add(task.inventory_id)
         return [invsrc for invsrc in InventorySource.objects.filter(inventory_id__in=inventory_ids, update_on_launch=True)]
 
+    @perf_logger_timer
     def spawn_workflow_graph_jobs(self, workflow_jobs):
         for workflow_job in workflow_jobs:
             if workflow_job.cancel_flag:
@@ -173,6 +207,7 @@ class TaskManager:
                 # TODO: should we emit a status on the socket here similar to tasks.py awx_periodic_scheduler() ?
                 # emit_websocket_notification('/socket.io/jobs', '', dict(id=))
 
+    @perf_logger_timer
     def process_finished_workflow_jobs(self, workflow_jobs):
         result = []
         for workflow_job in workflow_jobs:
@@ -217,6 +252,7 @@ class TaskManager:
                     schedule_task_manager()
         return result
 
+    @perf_logger_timer
     def start_task(self, task, instance_group, dependent_tasks=None, instance=None):
         self.start_task_limit -= 1
         if self.start_task_limit == 0:
@@ -277,6 +313,7 @@ class TaskManager:
         task.websocket_emit_status(task.status)  # adds to on_commit
         connection.on_commit(post_commit)
 
+    @perf_logger_timer
     def process_running_tasks(self, running_tasks):
         for task in running_tasks:
             self.dependency_graph.add_job(task)
@@ -376,6 +413,7 @@ class TaskManager:
             return True
         return False
 
+    @perf_logger_timer
     def generate_dependencies(self, undeped_tasks):
         created_dependencies = []
         for task in undeped_tasks:
@@ -417,6 +455,7 @@ class TaskManager:
         UnifiedJob.objects.filter(pk__in=[task.pk for task in undeped_tasks]).update(dependencies_processed=True)
         return created_dependencies
 
+    @perf_logger_timer
     def process_pending_tasks(self, pending_tasks):
         running_workflow_templates = {wf.unified_job_template_id for wf in self.get_running_workflow_jobs()}
         tasks_to_update_job_explanation = []
@@ -564,17 +603,20 @@ class TaskManager:
                 logger.error(f'{j.execution_node} is not a registered instance; reaping {j.log_format}')
                 reap_job(j, 'failed')
 
+    @perf_logger_timer
     def process_tasks(self, all_sorted_tasks):
         running_tasks = [t for t in all_sorted_tasks if t.status in ['waiting', 'running']]
-
+        self.running_task_count = len(running_tasks)
         self.process_running_tasks(running_tasks)
 
         pending_tasks = [t for t in all_sorted_tasks if t.status == 'pending']
         undeped_tasks = [t for t in pending_tasks if not t.dependencies_processed]
+        self.pending_task_count = len(pending_tasks)
         dependencies = self.generate_dependencies(undeped_tasks)
         self.process_pending_tasks(dependencies)
         self.process_pending_tasks(pending_tasks)
 
+    @perf_logger_timer
     def _schedule(self):
         finished_wfjs = []
         all_sorted_tasks = self.get_tasks()
