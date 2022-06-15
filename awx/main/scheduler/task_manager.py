@@ -10,6 +10,9 @@ import time
 import sys
 import signal
 
+# Redis
+import redis
+
 # Django
 from django.db import transaction, connection
 from django.utils.translation import gettext_lazy as _, gettext_noop
@@ -60,7 +63,7 @@ def timeit(func):
 
 
 class TaskManager:
-    def __init__(self):
+    def __init__(self, start_task_limit=None):
         """
         Do NOT put database queries or other potentially expensive operations
         in the task manager init. The task manager object is created every time a
@@ -75,7 +78,12 @@ class TaskManager:
         # the task manager after 5 minutes. At scale, the task manager can easily take more than
         # 5 minutes to start pending jobs. If this limit is reached, pending jobs
         # will no longer be started and will be started on the next task manager cycle.
-        self.start_task_limit = settings.START_TASK_LIMIT
+        if start_task_limit:
+            self.start_task_limit = int(start_task_limit)
+        else:
+            self.start_task_limit = settings.START_TASK_LIMIT
+        self.tasks_started_ct = 0
+        self.pending_tasks_considered_ct = 0
         self.time_delta_job_explanation = timedelta(seconds=30)
         self.subsystem_metrics = s_metrics.Metrics(auto_pipe_execute=False)
         # initialize each metric to 0 and force metric_has_changed to true. This
@@ -272,11 +280,7 @@ class TaskManager:
 
     @timeit
     def start_task(self, task, instance_group, dependent_tasks=None, instance=None):
-        self.subsystem_metrics.inc("task_manager_tasks_started", 1)
-        self.start_task_limit -= 1
-        if self.start_task_limit == 0:
-            # schedule another run immediately after this task manager
-            schedule_task_manager()
+        self.tasks_started_ct += 1
         from awx.main.tasks.system import handle_work_error, handle_work_success
 
         dependent_tasks = dependent_tasks or []
@@ -501,8 +505,7 @@ class TaskManager:
         running_workflow_templates = {wf.unified_job_template_id for wf in self.get_running_workflow_jobs()}
         tasks_to_update_job_explanation = []
         for task in pending_tasks:
-            if self.start_task_limit <= 0:
-                break
+            self.pending_tasks_considered_ct += 1
             blocked_by = self.job_blocked_by(task)
             if blocked_by:
                 self.subsystem_metrics.inc("task_manager_tasks_blocked", 1)
@@ -712,6 +715,7 @@ class TaskManager:
             if time_last_recorded > settings.SUBSYSTEM_METRICS_TASK_MANAGER_RECORD_INTERVAL:
                 logger.debug(f"recording metrics, last recorded {time_last_recorded} seconds ago")
                 self.subsystem_metrics.set("task_manager_recorded_timestamp", current_time)
+                self.subsystem_metrics.set("task_manager_tasks_started", self.tasks_started_ct)
                 self.subsystem_metrics.pipe_execute()
             else:
                 logger.debug(f"skipping recording metrics, last recorded {time_last_recorded} seconds ago")
@@ -733,4 +737,20 @@ class TaskManager:
                     signal.signal(signal.SIGTERM, self.record_aggregate_metrics_and_exit)
                     self._schedule()
                     self.record_aggregate_metrics()
+                redis_conn = redis.Redis.from_url(settings.BROKER_URL)
+
+                # If we are not making any progress AND we are hitting the start_task_limit,
+                # we need to increase the number of jobs we are considering
+                if (self.pending_tasks_considered_ct >= self.start_task_limit) and (self.tasks_started_ct == 0):
+                    unstarted_ct = self.pending_tasks_considered_ct - self.tasks_started_ct
+                    new_start_task_limit = self.start_task_limit + unstarted_ct
+                    logger.info(
+                        f'Task manager started {self.tasks_started_ct} after considering {self.pending_tasks_considered_ct} jobs '
+                        f'with limit of {self.start_task_limit}, next limit will be {new_start_task_limit}'
+                    )
+                    redis_conn.set('start_task_limit', new_start_task_limit)
+                    schedule_task_manager()
+                else:
+                    redis_conn.delete('start_task_limit')
+
                 logger.debug("Finishing Scheduler")
