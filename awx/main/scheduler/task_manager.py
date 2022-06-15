@@ -78,8 +78,10 @@ class TaskManager:
         # the task manager after 5 minutes. At scale, the task manager can easily take more than
         # 5 minutes to start pending jobs. If this limit is reached, pending jobs
         # will no longer be started and will be started on the next task manager cycle.
-        if start_task_limit:
-            self.start_task_limit = int(start_task_limit)
+        self.redis = redis.Redis.from_url(settings.BROKER_URL)
+        redis_limit = self.redis.get('start_task_limit')
+        if redis_limit:
+            self.start_task_limit = int(redis_limit)
         else:
             self.start_task_limit = settings.START_TASK_LIMIT
         self.tasks_started_ct = 0
@@ -724,6 +726,28 @@ class TaskManager:
         self.record_aggregate_metrics()
         sys.exit(1)
 
+    def set_start_task_limit(self):
+        # If we are not making any progress AND we are hitting the start_task_limit,
+        # we need to increase the number of jobs we are considering
+        unstarted_ct = self.pending_tasks_considered_ct - self.tasks_started_ct
+        new_start_task_limit = settings.START_TASK_LIMIT + unstarted_ct
+        if new_start_task_limit <= settings.START_TASK_LIMIT:
+            logger.info(f'Task started {self.tasks_started_ct} of {self.pending_tasks_considered_ct} pending jobs, ' 'removing custom start_task_limit')
+            self.redis.delete('start_task_limit')
+        elif new_start_task_limit != self.start_task_limit:
+            msg = (
+                f'Task manager started {self.tasks_started_ct} of {self.pending_tasks_considered_ct} pending jobs '
+                f'with limit of {self.start_task_limit}, next limit will be {new_start_task_limit}'
+            )
+            if self.tasks_started_ct == 0:
+                logger.warning(msg)
+            else:
+                logger.info(msg)
+            self.redis.set('start_task_limit', new_start_task_limit)
+
+        if new_start_task_limit > self.start_task_limit:
+            schedule_task_manager()
+
     def schedule(self):
         # Lock
         with advisory_lock('task_manager_lock', wait=False) as acquired:
@@ -737,20 +761,6 @@ class TaskManager:
                     signal.signal(signal.SIGTERM, self.record_aggregate_metrics_and_exit)
                     self._schedule()
                     self.record_aggregate_metrics()
-                redis_conn = redis.Redis.from_url(settings.BROKER_URL)
-
-                # If we are not making any progress AND we are hitting the start_task_limit,
-                # we need to increase the number of jobs we are considering
-                if (self.pending_tasks_considered_ct >= self.start_task_limit) and (self.tasks_started_ct == 0):
-                    unstarted_ct = self.pending_tasks_considered_ct - self.tasks_started_ct
-                    new_start_task_limit = self.start_task_limit + unstarted_ct
-                    logger.info(
-                        f'Task manager started {self.tasks_started_ct} after considering {self.pending_tasks_considered_ct} jobs '
-                        f'with limit of {self.start_task_limit}, next limit will be {new_start_task_limit}'
-                    )
-                    redis_conn.set('start_task_limit', new_start_task_limit)
-                    schedule_task_manager()
-                elif self.start_task_limit != settings.START_TASK_LIMIT:
-                    redis_conn.delete('start_task_limit')
+                    self.set_start_task_limit()
 
                 logger.debug("Finishing Scheduler")
