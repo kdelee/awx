@@ -732,7 +732,7 @@ class TaskManager:
         unstarted_ct = self.pending_tasks_considered_ct - self.tasks_started_ct
         new_start_task_limit = settings.START_TASK_LIMIT + unstarted_ct
         if new_start_task_limit <= settings.START_TASK_LIMIT:
-            logger.info(f'Task started {self.tasks_started_ct} of {self.pending_tasks_considered_ct} pending jobs, ' 'removing custom start_task_limit')
+            logger.info(f'Task manager started {self.tasks_started_ct} of {self.pending_tasks_considered_ct} pending jobs, ' 'removing custom start_task_limit')
             self.redis.delete('start_task_limit')
         elif new_start_task_limit != self.start_task_limit:
             msg = (
