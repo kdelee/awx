@@ -750,7 +750,7 @@ class TaskManager:
                     )
                     redis_conn.set('start_task_limit', new_start_task_limit)
                     schedule_task_manager()
-                else:
+                elif self.start_task_limit != settings.START_TASK_LIMIT:
                     redis_conn.delete('start_task_limit')
 
                 logger.debug("Finishing Scheduler")
