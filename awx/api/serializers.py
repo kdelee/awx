@@ -1973,9 +1973,10 @@ class GroupSerializer(BaseSerializerWithVariables):
 
 
 class BulkHostSerializer(HostSerializer):
-    name = serializers.CharField(required=True, allow_blank=False, max_length=512)
+    name = serializers.CharField(required=False, allow_blank=False, max_length=512, help_text="Required for creation. Optional for deletion.")
     instance_id = serializers.CharField(required=False, max_length=1024)
     description = serializers.CharField(required=False)
+    id = serializers.IntegerField(required=False, min_value=1, help_text='Ignored on creation, only used for deletion. For delete, id supersedes "name"')
     enabled = serializers.BooleanField(default=True, required=False)
     variables = serializers.CharField(allow_blank=True, required=False)
 
@@ -1984,16 +1985,32 @@ class BulkHostSerializer(HostSerializer):
             'name',
             'enabled',
             'instance_id',
+            'id',
             'description',
             'variables',
         )
 
+    def validate(self, attrs):
+        delete = self.context.get('delete', False)
+        if not delete:
+            if not attrs.get('name'):
+                raise serializers.ValidationError(_(f'"name" required when creating hosts.'))
+            if attrs.get('id'):
+                # we ignore 'id' on POST
+                attrs.pop('id')
+        if delete:
+            if not (attrs.get('id') or attrs.get('name')):
+                raise serializers.ValidationError(_(f'Provide either "name" or "id" for host to be deleted.'))
+            if attrs.get('id') and attrs.get('name'):
+                attrs.pop('name')
+        return attrs
 
-class BulkHostCreateSerializer(serializers.Serializer):
+
+class BulkHostActionSerializer(serializers.Serializer):
     inventory = serializers.PrimaryKeyRelatedField(
         queryset=Inventory.objects.all(), required=True, write_only=True, help_text=_('Primary Key ID of inventory to add hosts to.')
     )
-    hosts = serializers.ListField(child=BulkHostSerializer(), allow_empty=False, max_length=1000, write_only=True, help_text=_('Hosts to be created.'))
+    hosts = serializers.ListField(child=BulkHostSerializer(), allow_empty=False, max_length=10000, write_only=True, help_text=_('Hosts to be created.'))
 
     class Meta:
         fields = ('inventory', 'hosts')
@@ -2033,7 +2050,7 @@ class BulkHostCreateSerializer(serializers.Serializer):
 
         return True
 
-    def validate(self, attrs):
+    def _validate_inventory_permissions(self, attrs):
         request = self.context.get('request', None)
         inv = attrs['inventory']
         if request and not request.user.is_superuser:
@@ -2049,6 +2066,13 @@ class BulkHostCreateSerializer(serializers.Serializer):
             is_inventory_admin = Inventory.accessible_pk_qs(request.user, 'inventory_admin_role').filter(id=inv.id).exists()
             if not any([is_inventory_admin, is_org_admin, is_org_inv_admin]):
                 raise serializers.ValidationError(_(f'Inventory with id {inv.id} not found or lack permissions to add hosts.'))
+        return attrs
+
+
+class BulkHostCreateSerializer(BulkHostActionSerializer):
+    def validate(self, attrs):
+        attrs = self._validate_inventory_permissions(attrs)
+        inv = attrs['inventory']
         current_hostnames = {h[0] for h in Host.objects.filter(inventory=inv).values_list('name').all()}
         new_names = [host['name'] for host in attrs['hosts']]
         duplicate_new_names = [n for n in new_names if n in current_hostnames or new_names.count(n) > 1]
@@ -2071,6 +2095,47 @@ class BulkHostCreateSerializer(serializers.Serializer):
         except Exception as e:
             raise serializers.ValidationError({"detail": _(f"{e}")})
         return {"created": len(result), "url": InventorySerializer().get_related(validated_data['inventory'])['hosts']}
+
+
+class BulkHostDeleteSerializer(BulkHostActionSerializer):
+    def validate(self, attrs):
+        attrs = self._validate_inventory_permissions(attrs)
+        inv = attrs['inventory']
+        hosts = attrs['hosts']
+        has_hostnames = [h['name'] for h in hosts if not h.get('id', None)]
+        has_id = [h['id'] for h in hosts if h.get('id', None)]
+        hosts_to_delete = None
+        if has_hostnames:
+            hosts_from_hostnames = Host.objects.filter(inventory=inv, name__in=has_hostname).all()
+            found = [found.name for found in hosts_from_hostsnames]
+            if len(has_hostnames) != len(found):
+                missing = [h for h in has_hostnames if h not in found]
+                raise serializers.ValidationError(_(f'Host(s) not found for inventory {inv.id}. Errors: {missing}'))
+            hosts_to_delete = hosts_from_hostnames
+
+        if has_id:
+            hosts_from_id = Host.objects.filter(inventory=inv, id__in=has_id).all()
+            found = [found.id for found in hosts_from_id]
+            if len(has_id) != len(found):
+                missing = [h for h in has_id if h not in found]
+                raise serializers.ValidationError(_(f'Host(s) not found for inventory {inv.id}. Errors: {missing}'))
+            if hosts_to_delete:
+                hosts_to_delete.union(hosts_from_id)
+            else:
+                hosts_to_delete = hosts_from_id
+
+        attrs['hosts'] = hosts_to_delete
+        return attrs
+
+    def create(self, validated_data):
+        """This is actually a delete method...implemented with POST and 'create' so we can take data in."""
+        hosts = validated_data['hosts']
+        num_hosts = len(hosts)
+        try:
+            hosts.delete()
+        except Exception as e:
+            raise serializers.ValidationError({"detail": _(f"{e}")})
+        return {"deleted": num_hosts, "url": InventorySerializer().get_related(validated_data['inventory'])['hosts']}
 
 
 class GroupTreeSerializer(GroupSerializer):

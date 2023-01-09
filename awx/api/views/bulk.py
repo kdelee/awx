@@ -29,6 +29,7 @@ class BulkView(APIView):
         '''List top level resources'''
         data = OrderedDict()
         data['bulk_host_create'] = reverse('api:bulk_host_create', request=request)
+        data['bulk_host_delete'] = reverse('api:bulk_host_delete', request=request)
         return Response(data)
 
 
@@ -46,4 +47,21 @@ class BulkHostCreateView(GenericAPIView):
         if serializer.is_valid():
             result = serializer.create(serializer.validated_data)
             return Response(result, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BulkHostDeleteView(GenericAPIView):
+    _ignore_model_permissions = True
+    permission_classes = [IsAuthenticated]
+    serializer_class = serializers.BulkHostDeleteSerializer
+    allowed_methods = ['GET', 'POST', 'OPTIONS']
+
+    def get(self, request):
+        return Response({"detail": "Bulk delete hosts with this endpoint"}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = serializers.BulkHostDeleteSerializer(data=request.data, context={'request': request, 'delete': True})
+        if serializer.is_valid():
+            result = serializer.create(serializer.validated_data)
+            return Response(result, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
