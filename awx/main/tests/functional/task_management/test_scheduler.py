@@ -118,7 +118,38 @@ class TestJobLifeCycle:
             assert [uj.execution_node, uj.controller_node] == [control_instance.hostname, control_instance.hostname], uj
         for uj in (job, inv_update):  # user-space jobs
             assert uj.capacity_type == 'execution'
-            assert [uj.execution_node, uj.controller_node] == [execution_instance.hostname, control_instance.hostname], uj
+
+    def test_hybrid_and_execution_instance(self, project, system_job_template, job_template, inventory_source, hybrid_instance, execution_instance):
+        assert Instance.objects.count() == 2
+
+        # Set hybrid instance capacity lower than execution so jobs that can run on execution node should prefer it
+        hybrid_instance.capacity = 50
+        execution_instance.capacity = 1000
+
+        pu = project.create_unified_job()
+        sj = system_job_template.create_unified_job()
+        job = job_template.create_unified_job()
+        inv_update = inventory_source.create_unified_job()
+
+        all_ujs = (pu, sj, job, inv_update)
+        for uj in all_ujs:
+            uj.signal_start()
+
+        DependencyManager().schedule()
+        tm = TaskManager()
+        self.run_tm(tm)
+
+        for uj in all_ujs:
+            uj.refresh_from_db()
+            assert uj.status == 'waiting'
+
+        for uj in (pu, sj):  # control plane jobs
+            assert uj.capacity_type == 'control'
+            assert [uj.execution_node, uj.controller_node] == [hybrid_instance.hostname, hybrid_instance.hostname], uj
+        for uj in (job, inv_update):  # user-space jobs
+            assert uj.capacity_type == 'execution'
+            assert [uj.execution_node, uj.controller_node] == [execution_instance.hostname, hybrid_instance.hostname], uj
+            assert [uj.execution_node, uj.controller_node] == [execution_instance.hostname, hybrid_instance.hostname], uj
 
     @pytest.mark.django_db
     def test_job_fails_to_launch_when_no_control_capacity(self, job_template, control_instance_low_capacity, execution_instance):
