@@ -11,7 +11,7 @@ import sys
 import signal
 
 # Django
-from django.db import transaction
+from django.db import transaction, connection
 from django.utils.translation import gettext_lazy as _, gettext_noop
 from django.utils.timezone import now as tz_now
 from django.conf import settings
@@ -512,21 +512,23 @@ class TaskManager(TaskBase):
                 task.save()
                 task.log_lifecycle("waiting")
 
-        # apply_async does a NOTIFY to the channel dispatcher is listening to
-        # postgres will treat this as part of the transaction, which is what we want
-        if task.status != 'failed' and type(task) is not WorkflowJob:
-            task_cls = task._get_task_class()
-            task_cls.apply_async(
-                [task.pk],
-                opts,
-                queue=task.get_queue_name(),
-                uuid=task.celery_task_id,
-            )
+        def post_commit():
+            # apply_async does a NOTIFY to the channel dispatcher is listening to
+            # postgres will treat this as part of the transaction, which is what we want
+            if task.status != 'failed' and type(task) is not WorkflowJob:
+                task_cls = task._get_task_class()
+                task_cls.apply_async(
+                    [task.pk],
+                    opts,
+                    queue=task.get_queue_name(),
+                    uuid=task.celery_task_id,
+                )
 
         # In exception cases, like a job failing pre-start checks, we send the websocket status message.
         # For jobs going into waiting, we omit this because of performance issues, as it should go to running quickly
         if task.status != 'waiting':
             task.websocket_emit_status(task.status)  # adds to on_commit
+        connection.on_commit(post_commit)  # adds to on_commit
 
     @timeit
     def process_running_tasks(self, running_tasks):
