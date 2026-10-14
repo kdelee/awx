@@ -93,6 +93,7 @@ __all__ = [
     'get_event_partition_epoch',
     'cleanup_new_process',
     'unified_job_class_to_event_table_name',
+    'get_job_variable_prefixes',
 ]
 
 
@@ -148,14 +149,6 @@ def is_testing(argv=None):
     elif len(argv) >= 2 and argv[1] == 'test':
         return True
     return False
-
-
-def bypass_in_test(func):
-    def fn(*args, **kwargs):
-        if not is_testing():
-            return func(*args, **kwargs)
-
-    return fn
 
 
 class RequireDebugTrueOrTest(logging.Filter):
@@ -340,16 +333,16 @@ def update_scm_url(scm_type, url, username=True, password=True, check_special_ca
             netloc_password = ''
 
     if netloc_username and parts.scheme != 'file' and scm_type not in ("insights", "archive"):
-        netloc = u':'.join([urllib.parse.quote(x, safe='') for x in (netloc_username, netloc_password) if x])
+        netloc = ':'.join([urllib.parse.quote(x, safe='') for x in (netloc_username, netloc_password) if x])
     else:
-        netloc = u''
+        netloc = ''
     # urllib.parse strips brackets from IPv6 addresses, so we need to add them back in
     hostname = parts.hostname
     if hostname and ':' in hostname and '[' in url and ']' in url:
         hostname = f'[{hostname}]'
-    netloc = u'@'.join(filter(None, [netloc, hostname]))
+    netloc = '@'.join(filter(None, [netloc, hostname]))
     if parts.port:
-        netloc = u':'.join([netloc, str(parts.port)])
+        netloc = ':'.join([netloc, str(parts.port)])
     new_url = urllib.parse.urlunsplit([parts.scheme, netloc, parts.path, parts.query, parts.fragment])
     if scp_format and parts.scheme == 'git+ssh':
         new_url = new_url.replace('git+ssh://', '', 1).replace('/', ':', 1)
@@ -385,7 +378,7 @@ def _convert_model_field_for_display(obj, field_name, password_fields=None):
     if password_fields is None:
         password_fields = set(getattr(type(obj), 'PASSWORD_FIELDS', [])) | set(['password'])
     if field_name in password_fields or (isinstance(field_val, str) and field_val.startswith('$encrypted$')):
-        return u'hidden'
+        return 'hidden'
     if hasattr(obj, 'display_%s' % field_name):
         field_val = getattr(obj, 'display_%s' % field_name)()
     if isinstance(field_val, (list, dict)):
@@ -599,23 +592,26 @@ def prefetch_page_capabilities(model, page, prefetch_list, user):
         4: {'edit': True, 'start': True},
         6: {'edit': False, 'start': False}
     }
-    Each capability is produced for all items in the page in a single query
+    Each capability is produced for all items in the page in a single query.
 
-    Examples of prefetch language:
-    prefetch_list = ['admin', 'execute']
-      --> prefetch the admin (edit) and execute (start) permissions for
+    Examples of prefetch language (permission-based):
+    prefetch_list = [{'edit': 'change'}, {'start': 'execute'}]
+      --> prefetch change (edit) and execute (start) permissions for
           items in list for current user
-    prefetch_list = ['inventory.admin']
-      --> prefetch the related inventory FK permissions for current user,
+    prefetch_list = [{'edit': 'inventory.change'}]
+      --> prefetch related inventory FK change permissions for current user,
           and put it into the object's cache
-    prefetch_list = [{'copy': ['inventory.admin', 'project.admin']}]
-      --> prefetch logical combination of admin permission to inventory AND
-          project, put into cache dictionary as "copy"
+    prefetch_list = [{'copy': ['inventory.use', 'project.use']}]
+      --> prefetch logical combination of use permission to inventory AND
+          project, put into cache dictionary as 'copy'
     """
     page_ids = [obj.id for obj in page]
     mapping = {}
     for obj in page:
         mapping[obj.id] = {}
+
+    admin_org_ids = assignments = system_auditor_ids = org_ct = None
+    target_permissions = member_evaluations = target_evaluations = actor_permissions = None
 
     for prefetch_entry in prefetch_list:
         display_method = None
@@ -628,29 +624,119 @@ def prefetch_page_capabilities(model, page, prefetch_list, user):
         if type(paths) is not list:
             paths = [paths]
 
-        # Build the query for accessible_objects according the user & role(s)
+        # Build the query for access_qs according the user & permission(s)
         filter_args = []
-        for role_path in paths:
-            if '.' in role_path:
-                res_path = '__'.join(role_path.split('.')[:-1])
-                role_type = role_path.split('.')[-1]
+        for perm_path in paths:
+            if '.' in perm_path:
+                res_path = '__'.join(perm_path.split('.')[:-1])
+                action = perm_path.split('.')[-1]
                 parent_model = model
-                for subpath in role_path.split('.')[:-1]:
+                for subpath in perm_path.split('.')[:-1]:
                     parent_model = parent_model._meta.get_field(subpath).related_model
-                filter_args.append(
-                    Q(Q(**{'%s__pk__in' % res_path: parent_model.accessible_pk_qs(user, '%s_role' % role_type)}) | Q(**{'%s__isnull' % res_path: True}))
-                )
+                access_qs = parent_model.access_qs(user, action)
+                filter_args.append(Q(Q(**{'%s__in' % res_path: access_qs}) | Q(**{'%s__isnull' % res_path: True})))
             else:
-                role_type = role_path
-                filter_args.append(Q(**{'pk__in': model.accessible_pk_qs(user, '%s_role' % role_type)}))
+                action = perm_path
+                if model._meta.model_name == 'user':
+                    # User has no DAB access_qs. User capabilities for an
+                    # Organization Admin are derived from membership in an
+                    # organization the actor can administer.
+                    from awx.main.models.organization import Organization
+
+                    from ansible_base.rbac.models import RoleEvaluation, RoleUserAssignment
+                    from ansible_base.rbac.permission_registry import permission_registry
+
+                    admin_org_ids = set(Organization.access_qs(user, 'change').values_list('id', flat=True)) if admin_org_ids is None else admin_org_ids
+                    superuser_count = model.objects.filter(is_superuser=True).count() if display_method == 'delete' else 0
+                    target_ids = {target.pk for target in page}
+                    assignments = (
+                        list(RoleUserAssignment.objects.filter(user_id__in=target_ids).values_list('user_id', 'object_role_id'))
+                        if assignments is None
+                        else assignments
+                    )
+                    system_auditor_ids = (
+                        set(
+                            RoleUserAssignment.objects.filter(
+                                user_id__in=target_ids,
+                                role_definition__name='Platform Auditor',
+                            ).values_list('user_id', flat=True)
+                        )
+                        if system_auditor_ids is None
+                        else system_auditor_ids
+                    )
+                    role_users = {}
+                    role_ids = set()
+                    for target_id, role_id in assignments:
+                        role_users.setdefault(role_id, set()).add(target_id)
+                        role_ids.add(role_id)
+                    org_ct = permission_registry.content_type_model.objects.get_for_model(Organization) if org_ct is None else org_ct
+                    memberships = {}
+                    target_permissions = target_permissions if target_permissions is not None else {}
+                    member_evaluations = (
+                        list(
+                            RoleEvaluation.objects.filter(
+                                role_id__in=role_ids,
+                                content_type_id=org_ct.id,
+                                codename='member_organization',
+                            ).values_list('object_id', 'role_id')
+                        )
+                        if member_evaluations is None
+                        else member_evaluations
+                    )
+                    for org_id, role_id in member_evaluations:
+                        for target_id in role_users.get(role_id, ()):
+                            memberships.setdefault(target_id, set()).add(org_id)
+                    if target_evaluations is None:
+                        target_evaluations = list(
+                            RoleEvaluation.objects.filter(role_id__in=role_ids).values_list('object_id', 'content_type_id', 'codename', 'role_id')
+                        )
+                        for object_id, content_type_id, codename, role_id in target_evaluations:
+                            for target_id in role_users.get(role_id, ()):
+                                target_permissions.setdefault(target_id, set()).add((object_id, content_type_id, codename))
+                        actor_role_ids = RoleUserAssignment.objects.filter(user_id=user.pk).values_list('object_role_id', flat=True)
+                        actor_permissions = (
+                            set(RoleEvaluation.objects.filter(role_id__in=actor_role_ids).values_list('object_id', 'content_type_id', 'codename'))
+                            if actor_permissions is None
+                            else actor_permissions
+                        )
+                    actor_role_ids = RoleUserAssignment.objects.filter(user_id=user.pk).values_list('object_role_id', flat=True)
+                    actor_permissions = (
+                        set(RoleEvaluation.objects.filter(role_id__in=actor_role_ids).values_list('object_id', 'content_type_id', 'codename'))
+                        if actor_permissions is None
+                        else actor_permissions
+                    )
+                    allowed_ids = set()
+                    for target in page:
+                        if target == user:
+                            allowed_ids.add(target.pk)
+                            continue
+                        if target.is_superuser:
+                            can_manage_other_superuser = (
+                                user.is_superuser and target != user and (display_method == 'edit' or (display_method == 'delete' and superuser_count > 1))
+                            )
+                            if can_manage_other_superuser:
+                                allowed_ids.add(target.pk)
+                            continue
+                        if target.pk in system_auditor_ids:
+                            continue
+                        target_org_ids = memberships.get(target.pk, set())
+                        if target_org_ids and target_org_ids.issubset(admin_org_ids):
+                            allowed_ids.add(target.pk)
+                        elif display_method == 'delete' and not target_org_ids:
+                            if target_permissions.get(target.pk, set()).issubset(actor_permissions):
+                                allowed_ids.add(target.pk)
+                    if display_method == 'delete':
+                        allowed_ids.discard(user.pk)
+                    filter_args.append(Q(pk__in=allowed_ids))
+                elif hasattr(model, 'access_qs'):
+                    filter_args.append(Q(**{'pk__in': model.access_qs(user, action)}))
+                else:
+                    # UnifiedJobTemplate is not registered with the permission registry,
+                    # so it only has access_ids_qs (not access_qs)
+                    filter_args.append(Q(**{'pk__in': model.access_ids_qs(user, action)}))
 
         if display_method is None:
-            # Role name translation to UI names for methods
-            display_method = role_type
-            if role_type == 'admin':
-                display_method = 'edit'
-            elif role_type in ['execute', 'update']:
-                display_method = 'start'
+            display_method = action
 
         # Union that query with the list of items on page
         filter_args.append(Q(pk__in=page_ids))
@@ -771,6 +857,21 @@ def get_cpu_effective_capacity(cpu_count, is_control_node=False):
         forkcpu = 4
 
     return max(1, int(cpu_count * forkcpu))
+
+
+def get_job_variable_prefixes():
+    """Return the list of active job variable prefixes based on INCLUDE_DEPRECATED_AWX_VAR_PREFIX setting.
+
+    When True (default), returns both 'awx' and 'tower' prefixes for backward compatibility.
+    When False, returns only 'tower'. The 'awx' prefix is deprecated and this setting
+    will default to False in a future release.
+    """
+    from django.conf import settings
+
+    include_awx = getattr(settings, 'INCLUDE_DEPRECATED_AWX_VAR_PREFIX', True)
+    if include_awx:
+        return ['awx', 'tower']
+    return ['tower']
 
 
 def convert_mem_str_to_bytes(mem_str):
@@ -1118,15 +1219,15 @@ def truncate_stdout(stdout, size):
     if size <= 0 or len(stdout) <= size:
         return stdout
 
-    stdout = stdout[: (size - 1)] + u'\u2026'
+    stdout = stdout[: (size - 1)] + '\u2026'
     set_count, reset_count = 0, 0
     for m in ANSI_SGR_PATTERN.finditer(stdout):
-        if m.group() == u'\u001b[0m':
+        if m.group() == '\u001b[0m':
             reset_count += 1
         else:
             set_count += 1
 
-    return stdout + u'\u001b[0m' * (set_count - reset_count)
+    return stdout + '\u001b[0m' * (set_count - reset_count)
 
 
 def deepmerge(a, b):
