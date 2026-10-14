@@ -281,3 +281,208 @@ The spike should produce:
 ## Final recommendation
 
 Proceed with partitioning by `UnifiedJob.created` in UTC, and enforce a created-date range whenever execution list requests are searching or sorting. This keeps the system simple, stable, and aligned with AWX’s actual execution model while reducing the risk of expensive unbounded scans.
+
+## Implementation sketch: force a created-date range for execution search/sort
+
+This spike proposes enforcing a created-date range whenever an execution-resource list request is doing search or sort behavior. The default list without search/sort remains unchanged.
+
+The enforcement should live in the shared AWX list base used by execution models.
+
+Example implementation:
+
+```python
+class ListAPIView(generics.ListAPIView, GenericAPIView):
+    def _has_created_date_range(self):
+        qp = self.request.query_params
+        key_pairs = [
+            ('created__gte', 'created__lt'),
+            ('created_after', 'created_before'),
+        ]
+        for start_key, end_key in key_pairs:
+            if start_key in qp and end_key in qp:
+                return True
+        return False
+
+    def _require_created_date_for_unified_job_search_sort(self):
+        if not getattr(self, 'model', None):
+            return
+        try:
+            is_unified_job = issubclass(self.model, UnifiedJob)
+        except TypeError:
+            return
+        if not is_unified_job:
+            return
+
+        qp = self.request.query_params
+        has_search_or_sort = any(k in qp for k in ('search', 'related__search', 'order_by', 'ordering', 'sort'))
+        if not has_search_or_sort:
+            return
+
+        if self._has_created_date_range():
+            return
+
+        raise ParseError(
+            _('Search/sort requests for execution resources require a created date range filter. '
+              'Include created__gte and created__lt (UTC) or created_after and created_before.')
+        )
+
+    def get_queryset(self):
+        self._require_created_date_for_unified_job_search_sort()
+        return self.request.user.get_queryset(self.model)
+```
+
+Why this matches the spike:
+- it limits expensive searches and sorts to bounded created-date windows
+- it applies only to execution-resource list views
+- it preserves default list behavior when no search/sort is happening
+- it keeps `created` as the canonical partition key and date filter
+
+Example tests:
+
+```python
+def test_unified_job_list_requires_created_date_with_order_by(mocker):
+    request = mocker.Mock()
+    request.query_params = {'order_by': '-created'}
+    view = ListAPIView()
+    view.model = UnifiedJob
+    view.request = request
+
+    with pytest.raises(ParseError):
+        view.get_queryset()
+```
+
+```python
+def test_unified_job_list_requires_created_date_with_search(mocker):
+    request = mocker.Mock()
+    request.query_params = {'search': 'foo'}
+    view = ListAPIView()
+    view.model = UnifiedJob
+    view.request = request
+
+    with pytest.raises(ParseError):
+        view.get_queryset()
+```
+
+```python
+def test_unified_job_list_allows_created_date_range(mocker):
+    request = mocker.Mock()
+    request.query_params = {
+        'order_by': '-created',
+        'created__gte': '2026-01-01T00:00:00Z',
+        'created__lt': '2026-01-02T00:00:00Z',
+    }
+    view = ListAPIView()
+    view.model = UnifiedJob
+    view.request = request
+    view.request.user = mocker.Mock()
+    view.request.user.get_queryset.return_value = object()
+
+    assert view.get_queryset() is not None
+```
+
+## Real partitioning and summary generation plan
+
+This spike should be implemented in two stages, with a summary-first rollout followed by table partitioning.
+
+### Stage 1: persistent per-day summary table
+
+Add a summary table keyed by `partition_date` (UTC date from `UnifiedJob.created`). This summary is internal and does not change API shape.
+
+Recommended model:
+
+```python
+class UnifiedJobCreatedDateSummary(models.Model):
+    partition_date = models.DateField(primary_key=True)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    summarized = models.BooleanField(default=False)
+    totals = models.JSONField(default=dict)
+    template_totals = models.JSONField(default=dict)
+    org_totals = models.JSONField(default=dict)
+    meta = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = 'main_unifiedjob_created_date_summary'
+```
+
+A generation task should:
+- accept a date or a date range
+- use an advisory lock to prevent duplicate generation
+- ensure all rows for that created-date partition are terminal before summarizing
+- compute status and summary counts for that partition date
+- upsert the summary row with `summarized=True`
+- if the partition is not ready, skip and try again later
+
+Pseudo-code:
+
+```python
+TERMINAL_STATUSES = ('successful', 'failed', 'error', 'canceled')
+
+
+def generate_summary_for_date(partition_date):
+    qs = UnifiedJob.objects.extra(
+        where=["(created AT TIME ZONE 'UTC')::date = %s"],
+        params=[partition_date],
+    )
+    if qs.exclude(status__in=TERMINAL_STATUSES).exists():
+        return False
+
+    status_counts = dict(qs.values('status').annotate(c=Count('id')).values_list('status', 'c'))
+
+    template_totals = {}
+    for row in qs.values('job_template_id', 'status').annotate(c=Count('id')):
+        tid = str(row['job_template_id']) if row['job_template_id'] is not None else 'null'
+        template_totals.setdefault(tid, {})[row['status']] = row['c']
+
+    UnifiedJobCreatedDateSummary.objects.update_or_create(
+        partition_date=partition_date,
+        defaults={
+            'generated_at': timezone.now(),
+            'summarized': True,
+            'totals': status_counts,
+            'template_totals': template_totals,
+        },
+    )
+    return True
+```
+
+This allows aggregate queries to use per-day summary rows as an optimization without making the summary a second source of truth.
+
+### Stage 2: table partitioning by created-date
+
+After the summary model is tested and stable, the underlying execution table can be converted to a partitioned table by the UTC created date.
+
+Example SQL pattern for Postgres:
+
+```sql
+ALTER TABLE main_unifiedjob ADD COLUMN created_date date
+  GENERATED ALWAYS AS ((created AT TIME ZONE 'UTC')::date) STORED;
+
+ALTER TABLE main_unifiedjob PARTITION BY RANGE (created_date);
+
+CREATE TABLE main_unifiedjob_2026_10_14 PARTITION OF main_unifiedjob
+  FOR VALUES FROM ('2026-10-14') TO ('2026-10-15');
+```
+
+Practical notes:
+- This is a larger migration with more risk than the summary table alone.
+- For existing huge tables, use staging validation and a table-swap migration strategy if direct ALTER is not feasible.
+- Ensure indexes, constraints, and triggers are recreated on each partition.
+
+### Operational scheduling
+
+The summary generation should be scheduled as a periodic background task, for example:
+- nightly summary generation for the previous day
+- hourly recheck for the current partition while jobs are still active
+- backfill job for historical partitions
+
+This job should:
+- skip any partition with any non-terminal jobs
+- generate summary only for finalized days
+- be idempotent and safe under retry
+- use an advisory DB lock to prevent duplicate runs
+
+This is the concrete execution plan behind the spike: summary table first, then real DB partitioning after the summary model and API behavior are proven.
+
+## Final note
+
+The most important design rule is that the summary is an optimization, not the canonical truth. If a partition is not finalized or a required permission dimension is not covered by the summary, the system must fall back to the base execution table. The created-date partitioning and summary models are valuable only when they preserve correctness and do not change access semantics.
