@@ -95,7 +95,10 @@ class UnifiedJobPaginator(DjangoPaginator):
     def count(self):
         model_name = getattr(self.object_list.model, '__name__', None)
         if model_name == 'UnifiedJob':
-            epoch = get_unified_job_summary_epoch()
+            try:
+                epoch = get_unified_job_summary_epoch()
+            except Exception:
+                epoch = None
             if epoch is not None:
                 ready_dates = summary_ready_dates(timezone.localtime(epoch).date(), timezone.localdate())
                 summary_total = summarized_visible_scope_groups_count(ready_dates, self.visible_scope_groups())
