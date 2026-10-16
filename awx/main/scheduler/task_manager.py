@@ -405,7 +405,14 @@ class DependencyManager(TaskBase):
             if job_deps:
                 dependencies += job_deps
                 with disable_activity_stream():
-                    task.dependent_jobs.add(*job_deps)
+                    for dependency in job_deps:
+                        task.dependent_jobs.add(
+                            dependency,
+                            through_defaults={
+                                'from_unifiedjob_created': task.created,
+                                'to_unifiedjob_created': dependency.created,
+                            },
+                        )
                 logger.debug(f'Linked {[dep.log_format for dep in job_deps]} as dependencies of {task.log_format}')
 
         UnifiedJob.objects.filter(pk__in=[task.pk for task in undeped_tasks]).update(dependencies_processed=True)

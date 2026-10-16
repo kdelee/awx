@@ -437,7 +437,11 @@ def activity_stream_create(sender, instance, created, **kwargs):
         #      we don't really use them anyway.
         if instance._meta.model_name != 'setting':  # Is not conf.Setting instance
             activity_entry.save()
-            getattr(activity_entry, object1).add(instance.pk)
+            relation = getattr(activity_entry, object1)
+            if object1 == 'unified_job':
+                relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
+            else:
+                relation.add(instance.pk)
         else:
             activity_entry.setting = conf_to_dict(instance)
             activity_entry.save()
@@ -465,7 +469,11 @@ def activity_stream_update(sender, instance, **kwargs):
     activity_entry = get_activity_stream_class()(operation='update', object1=object1, changes=json.dumps(changes), actor=get_current_user_or_none())
     if instance._meta.model_name != 'setting':  # Is not conf.Setting instance
         activity_entry.save()
-        getattr(activity_entry, object1).add(instance.pk)
+        relation = getattr(activity_entry, object1)
+        if object1 == 'unified_job':
+            relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
+        else:
+            relation.add(instance.pk)
     else:
         activity_entry.setting = conf_to_dict(instance)
         activity_entry.save()
