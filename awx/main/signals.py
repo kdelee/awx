@@ -440,6 +440,8 @@ def activity_stream_create(sender, instance, created, **kwargs):
             relation = getattr(activity_entry, object1)
             if object1 == 'unified_job':
                 relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
+            elif object1 in {'job', 'project_update', 'inventory_update', 'workflow_job', 'workflow_approval', 'ad_hoc_command'}:
+                relation.add(instance.pk, through_defaults={'unifiedjob_created': instance.created})
             else:
                 relation.add(instance.pk)
         else:
@@ -472,6 +474,8 @@ def activity_stream_update(sender, instance, **kwargs):
         relation = getattr(activity_entry, object1)
         if object1 == 'unified_job':
             relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
+        elif object1 in {'job', 'project_update', 'inventory_update', 'workflow_job', 'workflow_approval', 'ad_hoc_command'}:
+            relation.add(instance.pk, through_defaults={'unifiedjob_created': instance.created})
         else:
             relation.add(instance.pk)
     else:
