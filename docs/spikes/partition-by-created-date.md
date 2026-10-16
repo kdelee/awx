@@ -590,6 +590,60 @@ This task should:
 
 This is the concrete execution plan behind the spike: summary table first, then real DB partitioning after the summary model and API behavior are proven.
 
+## Current implementation status
+
+Completed on branch `spike/partition-by-created-date`:
+
+- `UnifiedJobCreatedDateSummary` model and migration, keyed by UTC date and `(content_type_id, object_id)`.
+- Denormalized `organization_id` permission ancestry on scoped summary rows.
+- Idempotent per-date summary generation with terminal-status checks and advisory locking.
+- Hourly retry for yesterday, two-days-ago, and all dirty historical dates.
+- UnifiedJob deletion invalidates the affected date summary; retry regenerates it.
+- Summary-aware pagination for the polymorphic `UnifiedJob` queryset.
+- Per-child ownership resolution for Job, ProjectUpdate, InventoryUpdate, WorkflowJob, AdHocCommand, WorkflowApproval, and SystemJob.
+- Per-date finalized/live count handling; finalized dates use summaries, running/current dates use visible live rows.
+- UTC whole-day date-filter validation.
+- RBAC functional coverage for mixed child types and UJT/organization visibility.
+- Direct unit-test DAB ServiceID bootstrap documented as temporary test infrastructure.
+
+Validation checkpoint:
+
+```text
+109 focused unit/functional tests passed
+makemigrations --check --dry-run: No changes detected
+```
+
+The Compose rootless `/etc/subuid` warning and missing frontend build directory are environmental warnings.
+
+## Revised physical partition transition
+
+Follow the proven JobEvent transition pattern, but use one historical partition instead of copying old rows into daily partitions:
+
+1. Record the migration epoch as the UTC boundary.
+2. Rename the existing `main_unifiedjob` table to `_unpartitioned_main_unifiedjob`.
+3. Create a replacement `main_unifiedjob` parent partitioned by UTC `created`.
+4. Create `main_unifiedjob_before_epoch` with bounds `MINVALUE` to epoch.
+5. Move/attach existing rows into that historical partition after schema and count validation.
+6. Create one future daily partition and verify new inserts route there.
+7. Keep the old table during rollout/rollback validation, then remove it only in a later cleanup migration.
+8. Preserve epoch-based reads for old rows, matching JobEvent behavior.
+
+Do not partition concrete child tables independently by a column they do not physically own. First prove the parent transition with multi-table joins. Then extend the same coordinated strategy to:
+
+```text
+Job
+ProjectUpdate
+InventoryUpdate
+WorkflowJob
+AdHocCommand
+WorkflowApproval
+SystemJob
+```
+
+For every child transition, preserve one-to-one parent links, primary-key/partition-key constraints, indexes, and FK behavior. PostgreSQL requires partition-aware uniqueness and may require coordinated parent/child DDL rather than ordinary Django schema operations.
+
+Physical partition implementation is not yet started. Next work is a PostgreSQL-only migration/test spike for `main_unifiedjob` plus one child, with rollback and row-count verification before expanding scope.
+
 ## Final note
 
 The most important design rule is that the summary is an optimization, not the canonical truth. If a partition is not finalized or a required permission dimension is not covered by the summary, the system must fall back to the base execution table. The created-date partitioning and summary models are valuable only when they preserve correctness and do not change access semantics.
