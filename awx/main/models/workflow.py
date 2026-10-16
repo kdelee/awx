@@ -256,6 +256,7 @@ class WorkflowJobNode(WorkflowNodeBase):
         self.job_created = self.job.created if self.job_id else None
         super().save(*args, **kwargs)
 
+    workflow_job_created = models.DateTimeField(null=True, default=None, editable=False)
     workflow_job = models.ForeignKey(
         'WorkflowJob',
         related_name='workflow_job_nodes',

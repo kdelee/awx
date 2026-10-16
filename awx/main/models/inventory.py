@@ -1303,6 +1303,7 @@ class InventoryUpdate(UnifiedJob, InventorySourceOptions, JobNotificationMixin, 
         default=False,
         editable=False,
     )
+    source_project_update_created = models.DateTimeField(null=True, default=None, editable=False)
     source_project_update = models.ForeignKey(
         'ProjectUpdate',
         related_name='scm_inventory_updates',

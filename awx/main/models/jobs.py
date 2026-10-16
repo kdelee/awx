@@ -587,6 +587,7 @@ class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskMana
         verbose_name=_('SCM Revision'),
         help_text=_('The SCM Revision from the Project used for this job, if available'),
     )
+    project_update_created = models.DateTimeField(null=True, default=None, editable=False)
     project_update = models.ForeignKey(
         'ProjectUpdate',
         blank=True,
