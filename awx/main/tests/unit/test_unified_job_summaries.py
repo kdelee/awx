@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
+from awx.main.signals import mark_unified_job_summary_dirty_on_delete
 from awx.main.utils.unified_job_summaries import combine_summary_and_live_counts, summary_dates_ready, summary_ready_dates, summary_scope_is_disjoint, summarized_unified_job_count, summarized_unified_job_count_for_dates
 
 
@@ -20,6 +21,20 @@ def test_summary_readiness_is_per_date(mocker):
     assert summary_ready_dates(date(2026, 10, 9), date(2026, 10, 13)) == {
         date(2026, 10, 9), date(2026, 10, 11)
     }
+
+
+def test_deleted_job_marks_historical_summary_dirty(mocker):
+    update = mocker.patch('awx.main.signals.UnifiedJobCreatedDateSummary.objects.update_or_create')
+    job = mocker.Mock(created=datetime(2026, 10, 9, tzinfo=timezone.utc))
+
+    mark_unified_job_summary_dirty_on_delete(None, job)
+
+    update.assert_called_once_with(
+        partition_date=date(2026, 10, 9),
+        content_type_id=None,
+        object_id=None,
+        defaults={'summarized': False},
+    )
 
 
 def test_summary_count_uses_only_ready_dates(mocker):
