@@ -31,6 +31,12 @@ def create_probe(apps, schema_editor):
             'INSERT INTO main_job_partition_probe '
             'SELECT j.*, u.created FROM main_job j JOIN main_unifiedjob u ON u.id = j.unifiedjob_ptr_id'
         )
+        cursor.execute(
+            'ALTER TABLE main_job_partition_probe ADD CONSTRAINT main_job_partition_probe_unifiedjob_fk '
+            'FOREIGN KEY (unifiedjob_ptr_id, created) '
+            'REFERENCES main_unifiedjob_partition_probe (id, created) '
+            'DEFERRABLE INITIALLY DEFERRED'
+        )
 
 
 def drop_probe(apps, schema_editor):
