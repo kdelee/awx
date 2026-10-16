@@ -14,6 +14,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--copy-existing', action='store_true', help='Copy current UnifiedJob rows into the probe before checking routing.')
         parser.add_argument('--seed', action='store_true', help='Create historical and current probe rows before checking routing.')
+        parser.add_argument('--copy-child', action='store_true', help='Copy main_job rows into the child-table probe.')
 
     def handle(self, *args, **options):
         if connection.vendor != 'postgresql':
@@ -36,6 +37,12 @@ class Command(BaseCommand):
         with connection.cursor() as cursor:
             if options['copy_existing']:
                 cursor.execute('INSERT INTO main_unifiedjob_partition_probe SELECT * FROM main_unifiedjob ON CONFLICT DO NOTHING')
+            if options['copy_child']:
+                cursor.execute(
+                    'INSERT INTO main_job_partition_probe '
+                    'SELECT j.*, u.created FROM main_job j JOIN main_unifiedjob u ON u.id = j.unifiedjob_ptr_id '
+                    'ON CONFLICT DO NOTHING'
+                )
 
             cursor.execute(
                 """
@@ -65,7 +72,15 @@ class Command(BaseCommand):
                 "SELECT tableoid::regclass::text, count(*) FROM main_unifiedjob_partition_probe GROUP BY tableoid ORDER BY 1"
             )
             routed = cursor.fetchall()
+            child_routed = []
+            if options['copy_child']:
+                cursor.execute(
+                    "SELECT tableoid::regclass::text, count(*) FROM main_job_partition_probe GROUP BY tableoid ORDER BY 1"
+                )
+                child_routed = cursor.fetchall()
 
         self.stdout.write(self.style.SUCCESS(f'UnifiedJob partition probe is valid ({total} rows)'))
         for table, count in routed:
+            self.stdout.write(f'  {table}: {count}')
+        for table, count in child_routed:
             self.stdout.write(f'  {table}: {count}')
