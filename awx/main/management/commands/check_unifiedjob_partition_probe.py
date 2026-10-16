@@ -2,7 +2,7 @@ import datetime
 import uuid
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection
+from django.db import connection, transaction
 from django.utils.timezone import make_aware
 
 from awx.main.models import Inventory, JobTemplate, Organization, Project
@@ -15,6 +15,7 @@ class Command(BaseCommand):
         parser.add_argument('--copy-existing', action='store_true', help='Copy current UnifiedJob rows into the probe before checking routing.')
         parser.add_argument('--seed', action='store_true', help='Create historical and current probe rows before checking routing.')
         parser.add_argument('--copy-child', action='store_true', help='Copy main_job rows into the child-table probe.')
+        parser.add_argument('--check-fk', action='store_true', help='Verify the child composite FK rejects orphaned rows.')
 
     def handle(self, *args, **options):
         if connection.vendor != 'postgresql':
@@ -78,6 +79,24 @@ class Command(BaseCommand):
                     "SELECT tableoid::regclass::text, count(*) FROM main_job_partition_probe GROUP BY tableoid ORDER BY 1"
                 )
                 child_routed = cursor.fetchall()
+
+        if options['check_fk']:
+            try:
+                with transaction.atomic():
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            'SELECT unifiedjob_ptr_id, created FROM main_job_partition_probe LIMIT 1'
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            cursor.execute(
+                                'DELETE FROM main_unifiedjob_partition_probe WHERE id = %s AND created = %s', row
+                            )
+                raise CommandError('Child composite FK did not reject parent deletion')
+            except Exception as exc:
+                if isinstance(exc, CommandError):
+                    raise
+                self.stdout.write(self.style.SUCCESS('Child composite FK rejected orphaning'))
 
         self.stdout.write(self.style.SUCCESS(f'UnifiedJob partition probe is valid ({total} rows)'))
         for table, count in routed:
