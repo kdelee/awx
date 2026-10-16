@@ -24,6 +24,14 @@ class Migration(migrations.Migration):
                 'db_table': 'main_unifiedjob_created_date_summary',
             },
         ),
+        migrations.AddIndex(
+            model_name='unifiedjobcreateddatesummary',
+            index=models.Index(fields=('partition_date', 'content_type_id', 'object_id'), name='uj_summary_date_resource'),
+        ),
+        migrations.AddIndex(
+            model_name='unifiedjobcreateddatesummary',
+            index=models.Index(fields=('content_type_id', 'object_id', 'partition_date'), name='uj_summary_resource_date'),
+        ),
         migrations.AddConstraint(
             model_name='unifiedjobcreateddatesummary',
             constraint=models.UniqueConstraint(fields=('partition_date', 'content_type_id', 'object_id'), name='main_uj_created_summary_resource'),

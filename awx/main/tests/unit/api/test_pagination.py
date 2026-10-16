@@ -72,20 +72,23 @@ class TestActivityStreamPagination:
 
 
 class TestUnifiedJobPaginator:
-    def test_count_uses_unfiltered_table_count(self):
-        with patch('awx.api.pagination.UnifiedJob') as mock_uj:
-            mock_uj.objects.count.return_value = 42000
-            paginator = UnifiedJobPaginator(object_list=[], per_page=25)
-            assert paginator.count == 42000
-            mock_uj.objects.count.assert_called_once()
+    def test_count_uses_filtered_queryset(self):
+        object_list = MagicMock()
+        object_list.count.return_value = 713
+        paginator = UnifiedJobPaginator(object_list=object_list, per_page=25)
+
+        assert paginator.count == 713
+        object_list.count.assert_called_once_with()
 
     def test_count_is_cached(self):
-        with patch('awx.api.pagination.UnifiedJob') as mock_uj:
-            mock_uj.objects.count.return_value = 500
-            paginator = UnifiedJobPaginator(object_list=[], per_page=25)
-            _ = paginator.count
-            _ = paginator.count
-            mock_uj.objects.count.assert_called_once()
+        object_list = MagicMock()
+        object_list.count.return_value = 500
+        paginator = UnifiedJobPaginator(object_list=object_list, per_page=25)
+
+        _ = paginator.count
+        _ = paginator.count
+
+        object_list.count.assert_called_once_with()
 
 
 class TestJobPaginator:

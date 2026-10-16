@@ -23,6 +23,10 @@ class UnifiedJobCreatedDateSummary(models.Model):
 
     class Meta:
         db_table = 'main_unifiedjob_created_date_summary'
+        indexes = [
+            models.Index(fields=('partition_date', 'content_type_id', 'object_id'), name='uj_summary_date_resource'),
+            models.Index(fields=('content_type_id', 'object_id', 'partition_date'), name='uj_summary_resource_date'),
+        ]
         constraints = [
             models.UniqueConstraint(fields=('partition_date', 'content_type_id', 'object_id'), name='main_uj_created_summary_resource'),
             models.CheckConstraint(

@@ -16,7 +16,7 @@ from django.utils.translation import gettext_lazy as _
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import (
     FieldLookupBackend,
 )
-from awx.main.models import ActivityStream, UnifiedJob
+from awx.main.models import ActivityStream
 
 
 class DisabledPaginator(DjangoPaginator):
@@ -38,11 +38,11 @@ class ActivityStreamPaginator(DjangoPaginator):
 
 
 class UnifiedJobPaginator(DjangoPaginator):
-    """Use unfiltered table count for unified job pagination."""
+    """Count actual queryset so pagination metadata matches visible rows."""
 
     @cached_property
     def count(self):
-        return UnifiedJob.objects.count()
+        return self.object_list.count()
 
 
 class JobPaginator(DjangoPaginator):
