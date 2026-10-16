@@ -1,5 +1,10 @@
 import pytest
 import logging
+import importlib
+
+from django.db.models.signals import post_migrate
+
+from awx.main.utils import is_testing
 
 from unittest.mock import PropertyMock
 
@@ -8,6 +13,24 @@ from awx.main.models import ExecutionEnvironment
 
 # Django
 from django.urls import URLResolver, URLPattern
+
+
+# Keep direct unit-test runs aligned with the functional test setup. DAB's
+# resource-registry signal requires ServiceID during post-migrate, but unit
+# pytest collection does not load tests/functional/conftest.py. Revert this
+# local hook if the shared test bootstrap starts loading that fixture instead.
+def _create_service_id(app_config, apps=None, **kwargs):
+    if apps is None:
+        return
+    try:
+        apps.get_model('dab_resource_registry', 'ServiceID')
+    except LookupError:
+        return
+    importlib.import_module('ansible_base.resource_registry.migrations.0001_initial').create_service_id(apps, None)
+
+
+if is_testing():
+    post_migrate.connect(_create_service_id)
 
 
 @pytest.fixture()

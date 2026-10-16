@@ -10,7 +10,7 @@ class UnifiedJobCreatedDateSummary(models.Model):
     summary, the system must fall back to the underlying UnifiedJob table.
     """
 
-    id = models.BigAutoField(primary_key=True)
+    id = models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')
     partition_date = models.DateField()
     # Matches AWX RBAC terminology: content_type_id + object_id identify a
     # permission-bearing resource. Both are NULL for the global aggregate.
