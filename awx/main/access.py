@@ -147,6 +147,15 @@ def get_user_queryset(user, model_class):
     return access_instance.get_queryset()
 
 
+def get_summary_scope_querysets(user, model_class):
+    """Return permission-resource querysets used by summary-aware counts."""
+    access_instance = access_registry[model_class](user)
+    provider = getattr(access_instance, 'summary_scope_querysets', None)
+    if provider is None:
+        return None
+    return provider()
+
+
 def check_user_access(user, model_class, action, *args, **kwargs):
     """
     Return True if user can perform action against model_class with the
@@ -1059,6 +1068,9 @@ class InventoryUpdateAccess(BaseAccess):
     )
     prefetch_related = ('unified_job_template', 'instance_group', 'credentials__credential_type', 'inventory')
 
+    def summary_scope_querysets(self):
+        return {'inventory': Inventory.access_ids_qs(self.user, 'view')}
+
     def filtered_queryset(self):
         return self.model.objects.filter(inventory_source__inventory__in=Inventory.access_ids_qs(self.user, 'view'))
 
@@ -1424,6 +1436,9 @@ class ProjectUpdateAccess(BaseAccess):
         'instance_group',
     )
 
+    def summary_scope_querysets(self):
+        return {'project': Project.access_ids_qs(self.user, 'view')}
+
     def filtered_queryset(self):
         return self.model.objects.filter(project__in=Project.access_ids_qs(self.user, 'view'))
 
@@ -1670,6 +1685,16 @@ class JobAccess(BaseAccess):
         'credentials__credential_type',
         Prefetch('labels', queryset=Label.objects.all().order_by('name')),
     )
+
+    def summary_scope_querysets(self):
+        """Return canonical permission-resource querysets for summary counts."""
+        org_access_qs = Organization.objects.filter(
+            Q(pk__in=Organization.access_ids_qs(self.user, 'change')) | Q(pk__in=Organization.access_ids_qs(self.user, 'audit_organization'))
+        )
+        return {
+            'job_template': JobTemplate.access_qs(self.user, 'view'),
+            'organization': org_access_qs,
+        }
 
     def filtered_queryset(self):
         qs = self.model.objects
@@ -2106,6 +2131,12 @@ class WorkflowJobAccess(BaseAccess):
         'modified_by',
         'organization',
     )
+
+    def summary_scope_querysets(self):
+        return {
+            'unified_job_template': UnifiedJobTemplate.access_qs(self.user, 'view'),
+            'organization': Organization.access_ids_qs(self.user, 'audit'),
+        }
 
     def filtered_queryset(self):
         return WorkflowJob.objects.filter(

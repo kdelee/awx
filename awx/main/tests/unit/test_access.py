@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.forms.models import model_to_dict
 from rest_framework.exceptions import ParseError
 
-from awx.main.access import BaseAccess, check_superuser, JobTemplateAccess, WorkflowJobTemplateAccess, vars_are_encrypted
+from awx.main.access import BaseAccess, check_superuser, JobTemplateAccess, WorkflowJobTemplateAccess, get_summary_scope_querysets, vars_are_encrypted
 from awx.main.fields import AskForField
 
 from awx.main.models import (
@@ -22,6 +22,18 @@ from awx.main.models import (
 @pytest.fixture
 def user_unit():
     return User(username='rando', password='raginrando', email='rando@redhat.com')
+
+
+def test_get_summary_scope_querysets_uses_registered_provider(monkeypatch):
+    class FakeAccess:
+        def __init__(self, user):
+            assert user == 'user'
+
+        def summary_scope_querysets(self):
+            return {'project': 'visible-projects'}
+
+    monkeypatch.setitem(__import__('awx.main.access', fromlist=['access_registry']).access_registry, Project, FakeAccess)
+    assert get_summary_scope_querysets('user', Project) == {'project': 'visible-projects'}
 
 
 class TestRelatedFieldAccess:
