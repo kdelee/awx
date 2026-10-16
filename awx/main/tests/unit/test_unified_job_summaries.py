@@ -1,4 +1,19 @@
-from awx.main.utils.unified_job_summaries import combine_summary_and_live_counts, summarized_unified_job_count
+from awx.main.utils.unified_job_summaries import combine_summary_and_live_counts, summary_scope_is_disjoint, summarized_unified_job_count
+
+
+def test_summary_scopes_with_same_content_type_can_be_summed():
+    """Separate visible resources of one type cannot count the same execution."""
+    assert summary_scope_is_disjoint([(17, [10]), (17, [11])]) is True
+
+
+def test_summary_scopes_with_different_content_types_require_live_fallback():
+    """UJT and organization scopes may describe the same execution; do not add them."""
+    assert summary_scope_is_disjoint([(17, [10]), (23, [44])]) is False
+
+
+def test_summary_scopes_with_overlapping_resources_require_live_fallback():
+    """Repeated resource identity means scope aggregation could double-count rows."""
+    assert summary_scope_is_disjoint([(17, [10]), (17, [10, 11])]) is False
 
 
 def test_hybrid_count_adds_disjoint_summary_and_live_dates_once():

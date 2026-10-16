@@ -14,6 +14,7 @@ class Migration(migrations.Migration):
                 ('partition_date', models.DateField()),
                 ('content_type_id', models.PositiveIntegerField(blank=True, null=True)),
                 ('object_id', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('organization_id', models.PositiveBigIntegerField(blank=True, null=True)),
                 ('generated_at', models.DateTimeField(blank=True, null=True)),
                 ('summarized', models.BooleanField(default=False)),
                 ('total', models.PositiveBigIntegerField(default=0)),

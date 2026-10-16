@@ -93,6 +93,9 @@ def generate_unified_job_created_date_summary(partition_date):
                 continue
             scoped.setdefault(template_id, {})[row['status']] = row['count']
 
+        template_organizations = dict(
+            UnifiedJobTemplate.objects.filter(pk__in=scoped).values_list('pk', 'organization_id')
+        )
         for template_id, counts in scoped.items():
             UnifiedJobCreatedDateSummary.objects.update_or_create(
                 partition_date=partition_date,
@@ -103,17 +106,18 @@ def generate_unified_job_created_date_summary(partition_date):
                     'summarized': True,
                     'total': sum(counts.values()),
                     'status_totals': counts,
+                    'organization_id': template_organizations.get(template_id),
                 },
             )
 
         scope_models = (
-            (ProjectUpdate, Project, 'project_id'),
-            (InventoryUpdate, InventorySource, 'inventory_source_id'),
-            (WorkflowJob, WorkflowJobTemplate, 'workflow_job_template_id'),
+            (ProjectUpdate, Project, 'project_id', 'organization_id'),
+            (InventoryUpdate, InventorySource, 'inventory_source_id', 'inventory__organization_id'),
+            (WorkflowJob, WorkflowJobTemplate, 'workflow_job_template_id', 'organization_id'),
         )
         start, end = _date_bounds(partition_date)
         scoped_count = len(scoped)
-        for model, resource_model, scope_field in scope_models:
+        for model, resource_model, scope_field, resource_org_field in scope_models:
             content_type_id = ContentType.objects.get_for_model(resource_model).id
             rows = model.objects.filter(created__gte=start, created__lt=end).values(scope_field, 'status').annotate(count=Count('id'))
             grouped = {}
@@ -130,6 +134,9 @@ def generate_unified_job_created_date_summary(partition_date):
                         'summarized': True,
                         'total': sum(counts.values()),
                         'status_totals': counts,
+                        'organization_id': dict(
+                            resource_model.objects.filter(pk=object_id).values_list('pk', resource_org_field)
+                        ).get(object_id),
                     },
                 )
                 scoped_count += 1

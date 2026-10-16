@@ -15,6 +15,7 @@ class UnifiedJobCreatedDateSummary(models.Model):
     # permission-bearing resource. Both are NULL for the global aggregate.
     content_type_id = models.PositiveIntegerField(null=True, blank=True)
     object_id = models.PositiveBigIntegerField(null=True, blank=True)
+    organization_id = models.PositiveBigIntegerField(null=True, blank=True)
     generated_at = models.DateTimeField(null=True, blank=True)
     summarized = models.BooleanField(default=False)
     total = models.PositiveBigIntegerField(default=0)
