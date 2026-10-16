@@ -1,5 +1,11 @@
+import datetime
+import uuid
+
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection
+from django.utils.timezone import make_aware
+
+from awx.main.models import Inventory, JobTemplate, Organization, Project
 
 
 class Command(BaseCommand):
@@ -7,10 +13,25 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--copy-existing', action='store_true', help='Copy current UnifiedJob rows into the probe before checking routing.')
+        parser.add_argument('--seed', action='store_true', help='Create historical and current probe rows before checking routing.')
 
     def handle(self, *args, **options):
         if connection.vendor != 'postgresql':
             raise CommandError('UnifiedJob partition probe requires PostgreSQL')
+
+        if options['seed']:
+            suffix = uuid.uuid4().hex[:8]
+            organization = Organization.objects.create(name=f'partition-probe-org-{suffix}')
+            project = Project.objects.create(name=f'partition-probe-project-{suffix}', organization=organization)
+            inventory = Inventory.objects.create(name=f'partition-probe-inventory-{suffix}', organization=organization)
+            template = JobTemplate.objects.create(
+                name=f'partition-probe-template-{suffix}', project=project, inventory=inventory, organization=organization
+            )
+            historical = template.create_unified_job()
+            historical.created = make_aware(datetime.datetime(2020, 1, 1))
+            historical.save(update_fields=['created'])
+            template.create_unified_job()
+            options['copy_existing'] = True
 
         with connection.cursor() as cursor:
             if options['copy_existing']:
