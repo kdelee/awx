@@ -40,8 +40,19 @@ def enqueue_unified_job_created_date_summary(created):
 def retry_unified_job_created_date_summaries():
     """Queue at most recent-date summary tasks for midnight and late completions."""
     today = now().date()
-    for days_ago in (1, 2):
-        enqueue_unified_job_created_date_summary(today - datetime.timedelta(days=days_ago))
+    recent_dates = [today - datetime.timedelta(days=days_ago) for days_ago in (1, 2)]
+    try:
+        dirty_dates = UnifiedJobCreatedDateSummary.objects.filter(
+            content_type_id=None,
+            object_id=None,
+            summarized=False,
+        ).values_list('partition_date', flat=True)
+        dirty_dates = sorted(dirty_dates)
+    except Exception:
+        dirty_dates = []
+    queued = list(dict.fromkeys(recent_dates + dirty_dates))
+    for partition_date in queued:
+        enqueue_unified_job_created_date_summary(partition_date)
 
 
 def _date_bounds(partition_date):

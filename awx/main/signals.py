@@ -46,6 +46,7 @@ from awx.main.models import (
     SystemJobTemplate,
     UnifiedJob,
     UnifiedJobTemplate,
+    UnifiedJobCreatedDateSummary,
     User,
     UserSessionMembership,
     WorkflowJobTemplateNode,
@@ -256,6 +257,18 @@ connect_computed_field_signals()
 m2m_changed.connect(rebuild_role_ancestor_list, Role.parents.through)
 post_save.connect(sync_superuser_status_to_rbac, sender=User)
 m2m_changed.connect(sync_rbac_to_superuser_status, Role.members.through)
+@receiver(post_delete, sender=UnifiedJob)
+def mark_unified_job_summary_dirty_on_delete(sender, instance, **kwargs):
+    """Force regeneration after deletion changes a finalized date aggregate."""
+    if instance.created:
+        UnifiedJobCreatedDateSummary.objects.update_or_create(
+            partition_date=timezone.localtime(instance.created).date(),
+            content_type_id=None,
+            object_id=None,
+            defaults={'summarized': False},
+        )
+
+
 pre_delete.connect(cleanup_detached_labels_on_deleted_parent, sender=UnifiedJob)
 pre_delete.connect(cleanup_detached_labels_on_deleted_parent, sender=UnifiedJobTemplate)
 
