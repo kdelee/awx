@@ -93,8 +93,10 @@ This summary should support historical aggregate queries without exposing a new 
 Summary rows are keyed by UTC date plus permission-relevant resource scope:
 
 - `partition_date`
-- `scope_type`: `global`, `job_template`, `project`, `inventory_source`, or `workflow_job_template`
-- `scope_id`: related resource ID for non-global scopes
+- `content_type_id`: Django content type ID for the permission-bearing resource
+- `object_id`: resource primary key
+
+For the global aggregate, both `content_type_id` and `object_id` are NULL. This matches AWX RBAC terminology and its `(content_type_id, object_id)` resource identity.
 - `generated_at`
 - `summarized`
 - `total`
@@ -407,10 +409,18 @@ Record query duration, selected view, user scope, date range, and whether summar
 
 ### Stage 2: scoped summary generation
 
-Generate summaries on current unpartitioned tables first. A task accepts one date or a date range, takes an advisory lock per date, and is idempotent.
+Generate summaries on current unpartitioned tables first. Summary generation runs as a queued `@task`, not inline in job completion or API requests. It has three triggers:
+
+- a post-terminal-job hook enqueues the job’s `created` date;
+- the periodic scheduler retries recent dirty/not-ready dates;
+- cleanup marks affected dates dirty and enqueues regeneration.
+
+The task accepts one date or a date range, takes an advisory lock per date, and is idempotent. The post-terminal hook only enqueues work.
 
 For each date:
 
+- acquire the date lock;
+- recheck that no UnifiedJob row for the date remains non-terminal;
 - reject or mark not-ready when any row is non-terminal;
 - resolve each execution to its permission owner;
 - write global and resource-scoped rows;
@@ -438,14 +448,16 @@ Views and paginator count paths resolve the caller’s existing access queryset 
 
 The live portion must use the same RBAC visibility semantics as the endpoint. Never count all summary rows and then apply permissions afterward.
 
-Resource ownership scopes cover direct resource permissions:
+Resource ownership scopes cover direct resource permissions. Summary rows use the `ContentType` of the permission-bearing resource, not the execution subtype:
 
 ```text
-Job              -> unified_job_template
-ProjectUpdate    -> project
-InventoryUpdate  -> inventory_source
-WorkflowJob      -> workflow_job_template
+Job              -> UnifiedJobTemplate
+ProjectUpdate    -> Project
+InventoryUpdate  -> InventorySource
+WorkflowJob      -> WorkflowJobTemplate
 ```
+
+The resulting summary identity is `(content_type_id, object_id)`, matching RBAC `RoleEvaluation` and `Role` records.
 
 Organization-level, inventory-level, team-derived, and other access paths can overlap these scopes. The implementation must either add matching scope rows and deduplicate by execution ID, or fall back to the live RBAC count for that request. Summing overlapping scopes without deduplication is invalid.
 
@@ -491,6 +503,7 @@ class UnifiedJobCreatedDateSummary(models.Model):
 A generation task should:
 - accept a date or a date range;
 - use an advisory lock to prevent duplicate generation;
+- recheck readiness inside the lock;
 - ensure all rows for that created-date partition are terminal before summarizing;
 - resolve each execution to permission-relevant scope IDs;
 - compute global and scoped status/count summaries;
@@ -516,8 +529,8 @@ def generate_summary_for_date(partition_date):
 
     UnifiedJobCreatedDateSummary.objects.update_or_create(
         partition_date=partition_date,
-        scope_type=UnifiedJobCreatedDateSummary.SCOPE_GLOBAL,
-        scope_id=None,
+        content_type_id=None,
+        object_id=None,
         defaults={
             'generated_at': timezone.now(),
             'summarized': True,
@@ -568,11 +581,13 @@ The summary generation should be scheduled as a periodic background task, for ex
 - hourly recheck for the current partition while jobs are still active
 - backfill job for historical partitions
 
-This job should:
-- skip any partition with any non-terminal jobs
-- generate summary only for finalized days
-- be idempotent and safe under retry
-- use an advisory DB lock to prevent duplicate runs
+This task should:
+- skip any date with any non-terminal jobs;
+- generate summary only for finalized dates;
+- be idempotent and safe under retry;
+- use an advisory DB lock to prevent duplicate runs;
+- tolerate jobs finishing after their created date;
+- be enqueued by terminal-job completion, periodic retry, and cleanup.
 
 This is the concrete execution plan behind the spike: summary table first, then real DB partitioning after the summary model and API behavior are proven.
 
