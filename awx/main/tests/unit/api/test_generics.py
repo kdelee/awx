@@ -5,11 +5,11 @@ from unittest import mock
 # DRF
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ParseError
 
 # AWX
 from awx.api.generics import ParentMixin, SubListCreateAttachDetachAPIView, SubListAttachDetachAPIView, ResourceAccessList, ListAPIView
-from awx.main.models import Organization, Credential
+from awx.main.models import Organization, Credential, Job
 
 
 @pytest.fixture
@@ -209,3 +209,30 @@ def test_related_search_reverse_FK_field():
     view = ListAPIView()
     view.model = Credential
     assert 'unifiedjobtemplates__search' in view.related_search_fields
+
+
+def test_unified_job_search_requires_created_range():
+    view = ListAPIView()
+    view.model = Job
+    view.request = mock.MagicMock(query_params={'search': 'backup'})
+
+    with pytest.raises(ParseError):
+        view._validate_created_date_range()
+
+
+def test_unified_job_filter_accepts_created_range():
+    view = ListAPIView()
+    view.model = Job
+    view.request = mock.MagicMock(
+        query_params={'or__status__in': 'failed', 'created__gte': '2026-01-01T00:00:00Z', 'created__lt': '2026-01-02T00:00:00Z'}
+    )
+
+    view._validate_created_date_range()
+
+
+def test_non_unified_job_search_does_not_require_created_range():
+    view = ListAPIView()
+    view.model = Credential
+    view.request = mock.MagicMock(query_params={'search': 'vault'})
+
+    view._validate_created_date_range()

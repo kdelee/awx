@@ -31,7 +31,9 @@ The AWX execution model is structured around a common base class:
   - workflow execution records
   - related execution subtypes
 
-The API-facing job list is implemented from the execution family, not from a standalone “job start” table. The partitioning strategy therefore needs to work at the shared execution level and remain compatible with the inheritance model already used by AWX.
+Every concrete child table must be partitioned too. Partitioning only `main_unifiedjob` leaves child-table scans, joins, and foreign-key lookups unpruned. Each child partition must use the same UTC `UnifiedJob.created` boundary as its parent row, with matching partition names and bounds.
+
+The API-facing job list is implemented from the execution family, not from a standalone “job start” table. The partitioning strategy therefore needs to work across the shared parent and every concrete child table while remaining compatible with AWX multi-table inheritance.
 
 The repository confirms:
 - `Job` is defined in `awx/main/models/jobs.py`
@@ -68,12 +70,15 @@ By contrast, `created` is:
 
 ### Routing logic
 
-New execution rows are inserted into the partition corresponding to their created date in UTC, and remain there for the rest of their lifetime.
+New execution rows are inserted into the parent partition corresponding to their created date in UTC. The matching child row must be inserted into the same-date child partition and remain there for the rest of its lifetime.
 
 This means:
 - no row movement
 - no re-partitioning later
-- clear and stable historical grouping
+- parent and child rows remain co-located by date
+- joins between `main_unifiedjob` and child tables can prune to the same partition set
+
+The migration must cover every concrete `UnifiedJob` descendant, including `Job`, `ProjectUpdate`, `InventoryUpdate`, `WorkflowJob`, `AdHocCommand`, and system execution models where applicable. New descendants must fail migration checks until a matching partition strategy exists.
 
 ## Daily summary model
 
@@ -85,27 +90,20 @@ This summary should support historical aggregate queries without exposing a new 
 
 ### Recommended summary record shape
 
-One row per UTC date:
+Summary rows are keyed by UTC date plus permission-relevant resource scope:
 
-- `partition_date` (date, unique)
-- `generated_at` (timestamp)
-- `summarized` (boolean)
-- aggregate counts, for example:
-  - total_jobs
-  - total_project_updates
-  - total_inventory_updates
-  - total_success
-  - total_failed
-  - total_error
-  - total_canceled
-  - counts by job type
-  - counts by template or related dimension when needed
-- optionally, summary rows for nested dimensions if those are required by the existing aggregate behavior
+- `partition_date`
+- `scope_type`: `global`, `job_template`, `project`, `inventory_source`, or `workflow_job_template`
+- `scope_id`: related resource ID for non-global scopes
+- `generated_at`
+- `summarized`
+- `total`
+- `status_totals`
+- `meta`
 
-The exact schema can be expanded later, but the core requirement is:
-- one internal summary row per created-date partition
-- safe idempotent generation
-- no API exposure
+A global row supports unrestricted aggregates. Scoped rows let views apply existing permission querysets before consuming summaries. Permissions are not inferred from summary data: jobs resolve to their related job template, project updates to project, inventory updates to inventory source, and workflow jobs to workflow job template. The view intersects permitted resource IDs with scoped summary rows, then combines global/scoped results only when semantics are equivalent.
+
+The exact aggregate dimensions can expand later, but every dimension used by an API response must have an explicit scope and correctness rule. No summary row is exposed directly through the API.
 
 ### Summary readiness
 
@@ -284,7 +282,7 @@ Proceed with partitioning by `UnifiedJob.created` in UTC, and enforce a created-
 
 ## Implementation sketch: force a created-date range for execution search/sort
 
-This spike proposes enforcing a created-date range whenever an execution-resource list request is doing search or sort behavior. The default list without search/sort remains unchanged.
+This spike proposes enforcing a created-date range for execution-resource list requests doing search or expensive filtering. The default list, ordinary pagination, and default ordering remain unchanged until query measurements justify stricter enforcement.
 
 The enforcement should live in the shared AWX list base used by execution models.
 
@@ -314,8 +312,10 @@ class ListAPIView(generics.ListAPIView, GenericAPIView):
             return
 
         qp = self.request.query_params
-        has_search_or_sort = any(k in qp for k in ('search', 'related__search', 'order_by', 'ordering', 'sort'))
-        if not has_search_or_sort:
+        has_search_or_expensive_filter = any(k in qp for k in ('search', 'related__search', 'or__', 'id__in', 'created__')) or any(
+            k in qp for k in ('order_by', 'ordering', 'sort')
+        )
+        if not has_search_or_expensive_filter:
             return
 
         if self._has_created_date_range():
@@ -380,9 +380,93 @@ def test_unified_job_list_allows_created_date_range(mocker):
     assert view.get_queryset() is not None
 ```
 
+## Implementation order: correctness before partitioning
+
+Physical partitioning is deferred until date-bounded query behavior, scoped summaries, cleanup, and permission correctness pass in local Docker Compose and staging. Existing UnifiedJob and concrete child tables are not partitioned today.
+
+The implementation proceeds in four reversible stages:
+
+1. date-range enforcement and query instrumentation;
+2. scoped summary generation and validation;
+3. view consumption plus cleanup integration;
+4. physical partitioning of `UnifiedJob` and every concrete child table.
+
+Stages 1–3 must work against the current unpartitioned tables. They provide a correctness baseline and can be rolled back without table migration.
+
+### Stage 1: date-range enforcement
+
+Apply the rule only to UnifiedJob-derived list views when an explicit search or expensive filter is present. Require a half-open UTC range:
+
+```text
+created__gte=<UTC start>&created__lt=<UTC end>
+```
+
+Keep the default unfiltered list unchanged. Do not reject ordinary pagination or default ordering until query measurements justify that behavior. Return a clear `400` error for unbounded search/filter requests.
+
+Record query duration, selected view, user scope, date range, and whether summary or base-table execution was used. Do not log credentials or full query parameters.
+
+### Stage 2: scoped summary generation
+
+Generate summaries on current unpartitioned tables first. A task accepts one date or a date range, takes an advisory lock per date, and is idempotent.
+
+For each date:
+
+- reject or mark not-ready when any row is non-terminal;
+- resolve each execution to its permission owner;
+- write global and resource-scoped rows;
+- replace rows atomically only after all counts complete;
+- mark dates dirty when late rows, corrections, or cleanup affect them;
+- support explicit rebuild and delete for testing.
+
+Resource ownership:
+
+```text
+Job              -> unified_job_template
+ProjectUpdate    -> project
+InventoryUpdate  -> inventory_source
+WorkflowJob      -> workflow_job_template
+```
+
+Summary rows are never authoritative. Missing, dirty, incomplete, or permission-incompatible summaries fall back to base tables.
+
+### Stage 3: view and cleanup integration
+
+Views and paginator count paths resolve the caller’s existing access queryset first, then consume only matching scoped summary rows. A summary-backed count must combine:
+
+1. finalized, summarized date partitions from scoped summary rows;
+2. unsummarized or not-yet-terminal date partitions from the live RBAC queryset.
+
+The live portion must use the same RBAC visibility semantics as the endpoint. Never count all summary rows and then apply permissions afterward.
+
+Resource ownership scopes cover direct resource permissions:
+
+```text
+Job              -> unified_job_template
+ProjectUpdate    -> project
+InventoryUpdate  -> inventory_source
+WorkflowJob      -> workflow_job_template
+```
+
+Organization-level, inventory-level, team-derived, and other access paths can overlap these scopes. The implementation must either add matching scope rows and deduplicate by execution ID, or fall back to the live RBAC count for that request. Summing overlapping scopes without deduplication is invalid.
+
+Global summaries are valid only for unrestricted callers and aggregates whose semantics match exactly. Row-level API results continue using base tables until partitioning validation is complete.
+
+Update Activity/UnifiedJob cleanup to:
+
+1. delete expired execution rows and dependent child rows;
+2. mark affected summary dates dirty;
+3. remove or rebuild affected summary scopes;
+4. never leave a stale row marked `summarized=True`.
+
+Paginator correctness tests must compare summary-backed counts and base-table RBAC counts for superuser, system auditor, org admin, and org member users across all resource ownership and organization/team permission paths. Test dates with terminal rows, active rows, missing summaries, stale summaries, cleanup, overlapping scopes, and late inserts.
+
+### Stage 4: physical partitioning
+
+Only after stages 1–3 pass at target scale, partition `UnifiedJob` and every concrete child table using matching UTC `created` bounds. Parent and child rows must be co-located by date. Validate constraints, foreign keys, polymorphic joins, cleanup, rollback, and partition pruning before production migration.
+
 ## Real partitioning and summary generation plan
 
-This spike should be implemented in two stages, with a summary-first rollout followed by table partitioning.
+This spike should be implemented in four stages above, with summary-first rollout followed by table partitioning.
 
 ### Stage 1: persistent per-day summary table
 
@@ -405,12 +489,14 @@ class UnifiedJobCreatedDateSummary(models.Model):
 ```
 
 A generation task should:
-- accept a date or a date range
-- use an advisory lock to prevent duplicate generation
-- ensure all rows for that created-date partition are terminal before summarizing
-- compute status and summary counts for that partition date
-- upsert the summary row with `summarized=True`
-- if the partition is not ready, skip and try again later
+- accept a date or a date range;
+- use an advisory lock to prevent duplicate generation;
+- ensure all rows for that created-date partition are terminal before summarizing;
+- resolve each execution to permission-relevant scope IDs;
+- compute global and scoped status/count summaries;
+- upsert rows atomically with `summarized=True`;
+- mark affected rows dirty after late inserts or cleanup;
+- skip not-ready partitions and retry later.
 
 Pseudo-code:
 
@@ -428,20 +514,23 @@ def generate_summary_for_date(partition_date):
 
     status_counts = dict(qs.values('status').annotate(c=Count('id')).values_list('status', 'c'))
 
-    template_totals = {}
-    for row in qs.values('job_template_id', 'status').annotate(c=Count('id')):
-        tid = str(row['job_template_id']) if row['job_template_id'] is not None else 'null'
-        template_totals.setdefault(tid, {})[row['status']] = row['c']
-
     UnifiedJobCreatedDateSummary.objects.update_or_create(
         partition_date=partition_date,
+        scope_type=UnifiedJobCreatedDateSummary.SCOPE_GLOBAL,
+        scope_id=None,
         defaults={
             'generated_at': timezone.now(),
             'summarized': True,
-            'totals': status_counts,
-            'template_totals': template_totals,
+            'total': qs.count(),
+            'status_totals': status_counts,
         },
     )
+
+    # Generate additional scoped rows from each subtype's permission owner.
+    # Job -> unified_job_template; ProjectUpdate -> project;
+    # InventoryUpdate -> inventory_source; WorkflowJob -> workflow_job_template.
+    # Each scope is queried through the same access queryset used by its view;
+    # never use a global row to answer a scoped request.
     return True
 ```
 
@@ -466,7 +555,11 @@ CREATE TABLE main_unifiedjob_2026_10_14 PARTITION OF main_unifiedjob
 Practical notes:
 - This is a larger migration with more risk than the summary table alone.
 - For existing huge tables, use staging validation and a table-swap migration strategy if direct ALTER is not feasible.
-- Ensure indexes, constraints, and triggers are recreated on each partition.
+- Ensure indexes, constraints, and triggers are recreated on every parent and child partition.
+- Preserve parent/child one-to-one links and validate that both rows always land in the same date partition.
+- Validate polymorphic content-type queries and every child-table join with `EXPLAIN`.
+- PostgreSQL partitioned-table primary keys and unique constraints must include the partition key; this may require redesigning existing `id`-only constraints and foreign keys.
+- Foreign keys between partitioned parent/child tables need explicit PostgreSQL-version validation; if unsupported for the required inheritance layout, use controlled application routing and migration checks rather than weakening referential integrity.
 
 ### Operational scheduling
 

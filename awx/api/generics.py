@@ -443,7 +443,34 @@ class SimpleListAPIView(generics.ListAPIView, GenericAPIView):
 class ListAPIView(generics.ListAPIView, GenericAPIView):
     # Base class for a read-only list view.
 
+    def _requires_created_date_range(self):
+        if not self.model:
+            return False
+        try:
+            is_unified_job = issubclass(self.model, UnifiedJob)
+        except TypeError:
+            return False
+        if not is_unified_job:
+            return False
+
+        params = self.request.query_params
+        return any(key == 'search' or key.startswith('or__') or key.startswith('created__') for key in params)
+
+    def _has_created_date_range(self):
+        params = self.request.query_params
+        return (
+            ('created__gte' in params and 'created__lt' in params)
+            or ('created_after' in params and 'created_before' in params)
+        )
+
+    def _validate_created_date_range(self):
+        if self._requires_created_date_range() and not self._has_created_date_range():
+            raise ParseError(
+                _('Search and filtered execution list requests require created__gte and created__lt (UTC).')
+            )
+
     def get_queryset(self):
+        self._validate_created_date_range()
         return self.request.user.get_queryset(self.model)
 
     def get_description_context(self):

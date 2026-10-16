@@ -59,6 +59,7 @@ from awx.main.models.ad_hoc_commands import AdHocCommand  # noqa
 from awx.main.models.schedules import Schedule  # noqa
 from awx.main.models.execution_environments import ExecutionEnvironment  # noqa
 from awx.main.models.activity_stream import ActivityStream  # noqa
+from awx.main.models.unified_job_created_date_summary import UnifiedJobCreatedDateSummary  # noqa
 from awx.main.models.ha import (  # noqa
     Instance,
     InstanceLink,
