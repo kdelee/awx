@@ -143,6 +143,8 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, ExecutionEn
         related_name='%(class)s_as_last_job+',
         on_delete=models.SET_NULL,
     )
+    current_job_created = models.DateTimeField(null=True, default=None, editable=False)
+    last_job_created = models.DateTimeField(null=True, default=None, editable=False)
     last_job_failed = models.BooleanField(
         default=False,
         editable=False,
@@ -306,6 +308,9 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, ExecutionEn
             self.save(update_fields=['next_schedule', 'next_job_run'])
 
     def save(self, *args, **kwargs):
+        # Keep the routing keys alongside the id-only legacy references.
+        self.current_job_created = self.current_job.created if self.current_job_id else None
+        self.last_job_created = self.last_job.created if self.last_job_id else None
         # If update_fields has been specified, add our field names to it,
         # if it hasn't been specified, then we're just doing a normal save.
         update_fields = kwargs.get('update_fields') or []
@@ -315,6 +320,11 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, ExecutionEn
             for field in updated_fields:
                 if field not in update_fields:
                     update_fields.append(field)
+        for field in ('current_job_created', 'last_job_created'):
+            if field not in update_fields:
+                update_fields.append(field)
+        if update_fields:
+            kwargs['update_fields'] = update_fields
         # Do the actual save.
         super(UnifiedJobTemplate, self).save(*args, **kwargs)
 
@@ -600,6 +610,7 @@ class UnifiedJob(
     class Meta:
         app_label = 'main'
         ordering = ('id',)
+        constraints = [models.UniqueConstraint(fields=('id', 'created'), name='unifiedjob_id_created_unique')]
 
     old_pk = models.PositiveIntegerField(
         null=True,
@@ -633,6 +644,7 @@ class UnifiedJob(
     )
     dependent_jobs = models.ManyToManyField(
         'self',
+        through='UnifiedJobDependent',
         editable=False,
         related_name='%(class)s_blocked_jobs',
         symmetrical=False,

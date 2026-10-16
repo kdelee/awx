@@ -1040,6 +1040,7 @@ class JobLaunchConfig(LaunchTimeConfig):
         on_delete=models.CASCADE,
         editable=False,
     )
+    job_created = models.DateTimeField(null=True, default=None, editable=False)
 
     # Instance Groups needed for non-unified job / unified JT models
     instance_groups = OrderedManyToManyField(
