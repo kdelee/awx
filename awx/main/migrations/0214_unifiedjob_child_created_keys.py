@@ -20,7 +20,7 @@ def backfill_job_created(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [('main', '0216_unifiedjob_child_partition_probes')]
+    dependencies = [('main', '0213_unified_job_created_date_summary')]
     operations = [
         migrations.AddField(model_name='job', name='job_created', field=models.DateTimeField(editable=False, null=True)),
         migrations.AddField(model_name='projectupdate', name='job_created', field=models.DateTimeField(editable=False, null=True)),
