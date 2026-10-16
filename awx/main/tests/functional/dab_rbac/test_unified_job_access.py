@@ -40,10 +40,14 @@ def test_unified_job_list_mixed_execution_types_count_once(user, setup_managed_r
         execution.created = make_aware(datetime.datetime(2026, 10, 12))
         execution.save(update_fields=['created'])
 
-    response = get(reverse('api:unified_job_list'), auditor)
+    with CaptureQueriesContext(connection) as ctx:
+        response = get(reverse('api:unified_job_list'), auditor)
 
     assert response.status_code == 200
     result_ids = {row['id'] for row in response.data['results']}
+    count_sql = [q['sql'] for q in ctx.captured_queries if 'COUNT' in q['sql'].upper()]
+    assert count_sql
+    assert all(' UNION ' not in sql.upper() for sql in count_sql)
     assert {job.pk, inventory_update.pk, adhoc.pk}.issubset(result_ids)
     assert response.data['count'] == len(result_ids)
 
