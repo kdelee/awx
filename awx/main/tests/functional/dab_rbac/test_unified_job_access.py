@@ -3,7 +3,6 @@ import datetime
 import pytest
 from django.utils.timezone import make_aware
 
-from django.contrib.contenttypes.models import ContentType
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
 
@@ -21,9 +20,9 @@ from awx.main.models import (
     Project,
     Team,
     UnifiedJob,
-    UnifiedJobCreatedDateSummary,
     UnifiedJobTemplate,
 )
+from awx.main.tasks.unified_job_summaries import generate_unified_job_created_date_summary
 
 
 @pytest.mark.django_db
@@ -52,24 +51,11 @@ def test_unified_job_list_count_uses_summary_and_live_paths(user, setup_managed_
     live_job = jt.create_unified_job()
     live_job.created = make_aware(datetime.datetime(2026, 10, 12))
     live_job.save(update_fields=['created'])
-    ujt_ct = ContentType.objects.get_for_model(UnifiedJobTemplate)
-    for content_type_id, object_id in ((None, None), (ujt_ct.id, jt.id)):
-        UnifiedJobCreatedDateSummary.objects.create(
-            partition_date=datetime.date(2026, 10, 9),
-            content_type_id=content_type_id,
-            object_id=object_id,
-            organization_id=org.id if object_id is not None else None,
-            summarized=True,
-            total=3,
-        )
-    UnifiedJobCreatedDateSummary.objects.create(
-        partition_date=datetime.date(2026, 10, 11),
-        content_type_id=ujt_ct.id,
-        object_id=jt.id,
-        organization_id=org.id,
-        summarized=True,
-        total=1,
-    )
+    for execution in (job, inventory_update, adhoc, finalized_job):
+        execution.status = 'successful'
+        execution.save(update_fields=['status'])
+    generate_unified_job_created_date_summary(datetime.date(2026, 10, 9))
+    generate_unified_job_created_date_summary(datetime.date(2026, 10, 11))
 
     with CaptureQueriesContext(connection) as ctx:
         response = get(reverse('api:unified_job_list'), auditor)
