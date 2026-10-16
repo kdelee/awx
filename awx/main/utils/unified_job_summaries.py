@@ -10,6 +10,25 @@ def combine_summary_and_live_counts(summarized_count, live_count):
     return summarized_count + live_count
 
 
+def summary_scope_is_disjoint(scope_groups):
+    """Return whether scope groups partition executions without double-counting.
+
+    Different ContentTypes can point at the same execution through different
+    permission paths, so mixed resource scopes require live-query fallback.
+    """
+    content_types = {content_type_id for content_type_id, _ in scope_groups}
+    if len(content_types) > 1:
+        return False
+
+    seen = set()
+    for content_type_id, object_ids in scope_groups:
+        resources = {(content_type_id, object_id) for object_id in object_ids}
+        if seen & resources:
+            return False
+        seen.update(resources)
+    return True
+
+
 def summarized_unified_job_count(start, end, content_type_id, object_ids):
     """Return finalized summary count for visible RBAC resources.
 
