@@ -1273,6 +1273,7 @@ class InventorySource(UnifiedJobTemplate, InventorySourceOptions, CustomVirtualE
 
 
 class InventoryUpdate(UnifiedJob, InventorySourceOptions, JobNotificationMixin, TaskManagerInventoryUpdateMixin, CustomVirtualEnvMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     """
     Internal job for tracking inventory updates from external sources.
     """

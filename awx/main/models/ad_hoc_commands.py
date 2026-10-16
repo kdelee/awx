@@ -27,6 +27,7 @@ __all__ = ['AdHocCommand']
 
 
 class AdHocCommand(UnifiedJob, JobNotificationMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     class Meta(object):
         app_label = 'main'
         ordering = ('id',)

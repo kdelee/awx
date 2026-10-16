@@ -956,6 +956,13 @@ class UnifiedJob(
             self.canceled_on = now()
             if 'canceled_on' not in update_fields:
                 update_fields.append('canceled_on')
+        # Child execution tables carry a denormalized partition routing key.
+        if hasattr(self, 'job_created') and self.job_created != self.created:
+            self.job_created = self.created
+            if 'job_created' not in update_fields:
+                update_fields.append('job_created')
+            kwargs['update_fields'] = update_fields or None
+
         # Okay; we're done. Perform the actual save.
         result = super(UnifiedJob, self).save(*args, **kwargs)
 

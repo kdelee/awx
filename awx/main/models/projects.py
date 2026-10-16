@@ -535,6 +535,7 @@ class Project(UnifiedJobTemplate, ProjectOptions, CustomVirtualEnvMixin, Related
 
 
 class ProjectUpdate(UnifiedJob, ProjectOptions, JobNotificationMixin, TaskManagerProjectUpdateMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     """
     Internal job for tracking project updates from SCM.
     """

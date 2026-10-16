@@ -554,6 +554,7 @@ class JobTemplate(UnifiedJobTemplate, JobOptions, SurveyJobTemplateMixin, Custom
 
 
 class Job(UnifiedJob, JobOptions, SurveyJobMixin, JobNotificationMixin, TaskManagerJobMixin, CustomVirtualEnvMixin, WebhookMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     """
     A job applies a project (with playbook) to an inventory source with a given
     credential.  It represents a single invocation of ansible-playbook with the
@@ -1250,6 +1251,7 @@ class SystemJobTemplate(UnifiedJobTemplate, SystemJobOptions):
 
 
 class SystemJob(UnifiedJob, SystemJobOptions, JobNotificationMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     class Meta:
         app_label = 'main'
         ordering = ('id',)

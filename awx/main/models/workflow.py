@@ -642,6 +642,7 @@ class WorkflowJobTemplate(UnifiedJobTemplate, WorkflowJobOptions, SurveyJobTempl
 
 
 class WorkflowJob(UnifiedJob, WorkflowJobOptions, SurveyJobMixin, JobNotificationMixin, WebhookMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     class Meta:
         app_label = 'main'
         ordering = ('id',)
@@ -846,6 +847,7 @@ class WorkflowApprovalTemplate(UnifiedJobTemplate, RelatedJobsMixin):
 
 
 class WorkflowApproval(UnifiedJob, JobNotificationMixin):
+    job_created = models.DateTimeField(null=True, editable=False)
     class Meta:
         app_label = 'main'
 
