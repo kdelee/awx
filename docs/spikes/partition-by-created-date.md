@@ -409,13 +409,12 @@ Record query duration, selected view, user scope, date range, and whether summar
 
 ### Stage 2: scoped summary generation
 
-Generate summaries on current unpartitioned tables first. Summary generation runs as a queued `@task`, not inline in job completion or API requests. It has three triggers:
+Generate summaries on current unpartitioned tables first. Summary generation runs as a queued `@task`, not inline in job completion or API requests. It has scheduled triggers:
 
-- a post-terminal-job hook enqueues the job’s `created` date;
-- the periodic scheduler retries recent dirty/not-ready dates;
-- cleanup marks affected dates dirty and enqueues regeneration.
+- an hourly scheduler queues the previous two UTC dates, covering midnight processing and late completions;
+- cleanup marks affected dates dirty and the hourly scheduler retries them.
 
-The task accepts one date or a date range, takes an advisory lock per date, and is idempotent. The post-terminal hook only enqueues work.
+The task accepts one date or a date range, takes an advisory lock per date, and is idempotent. No per-job completion hook enqueues work, avoiding a task storm when many jobs finish together.
 
 For each date:
 

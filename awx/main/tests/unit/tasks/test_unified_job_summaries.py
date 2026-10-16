@@ -36,3 +36,16 @@ def test_summary_task_does_not_run_when_date_lock_is_held(mocker):
 
     assert result is False
     summaries._date_queryset.assert_not_called()
+
+
+def test_hourly_retry_queues_only_recent_dates(mocker):
+    current = datetime.datetime(2026, 10, 16, 1, tzinfo=datetime.timezone.utc)
+    mocker.patch.object(summaries, 'now', return_value=current)
+    enqueue = mocker.patch.object(summaries, 'enqueue_unified_job_created_date_summary')
+
+    summaries.retry_unified_job_created_date_summaries()
+
+    assert [call.args[0] for call in enqueue.call_args_list] == [
+        datetime.date(2026, 10, 15),
+        datetime.date(2026, 10, 14),
+    ]

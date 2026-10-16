@@ -453,6 +453,10 @@ DISPATCHER_SCHEDULE = {
     'awx.main.tasks.system.cleanup_images_and_files': {'task': 'awx.main.tasks.system.cleanup_images_and_files', 'schedule': 10800},
     'awx.main.tasks.host_metrics.cleanup_host_metrics': {'task': 'awx.main.tasks.host_metrics.cleanup_host_metrics', 'schedule': 12600},
     'awx.main.tasks.host_metrics.host_metric_summary_monthly': {'task': 'awx.main.tasks.host_metrics.host_metric_summary_monthly', 'schedule': 14400},
+    'awx.main.tasks.unified_job_summaries.retry_unified_job_created_date_summaries': {
+        'task': 'awx.main.tasks.unified_job_summaries.retry_unified_job_created_date_summaries',
+        'schedule': 3600,
+    },
     'awx.main.tasks.system.periodic_resource_sync': {'task': 'awx.main.tasks.system.periodic_resource_sync', 'schedule': 900},
     'awx.main.tasks.host_indirect.cleanup_and_save_indirect_host_entries_fallback': {
         'task': 'awx.main.tasks.host_indirect.cleanup_and_save_indirect_host_entries_fallback',

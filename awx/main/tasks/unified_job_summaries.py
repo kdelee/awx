@@ -31,6 +31,14 @@ def enqueue_unified_job_created_date_summary(created):
     generate_unified_job_created_date_summary.delay(partition_date.isoformat())
 
 
+@task(queue=get_task_queuename, timeout=600, on_duplicate='queue_one')
+def retry_unified_job_created_date_summaries():
+    """Queue at most recent-date summary tasks for midnight and late completions."""
+    today = now().date()
+    for days_ago in (1, 2):
+        enqueue_unified_job_created_date_summary(today - datetime.timedelta(days=days_ago))
+
+
 def _date_bounds(partition_date):
     start = datetime.datetime.combine(partition_date, datetime.time.min, tzinfo=datetime.timezone.utc)
     return start, start + datetime.timedelta(days=1)

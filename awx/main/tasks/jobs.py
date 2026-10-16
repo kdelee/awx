@@ -73,7 +73,6 @@ from awx.main.tasks.signals import with_signal_handling, signal_callback
 from awx.main.tasks.receptor import AWXReceptorJob
 from awx.main.tasks.facts import start_fact_cache, finish_fact_cache
 from awx.main.tasks.system import update_smart_memberships_for_inventory, update_inventory_computed_fields, events_processed_hook
-from awx.main.tasks.unified_job_summaries import enqueue_unified_job_created_date_summary
 from awx.main.exceptions import AwxTaskError, PolicyEvaluationError, PostRunError, ReceptorNodeNotFound
 from awx.main.utils.ansible import read_ansible_config
 from awx.main.utils.safe_yaml import safe_dump, sanitize_jinja
@@ -644,8 +643,6 @@ class BaseTask(object):
         Hook for any steps to run before job/task is marked as complete.
         """
         instance.log_lifecycle("post_run")
-        if status in ('successful', 'failed', 'error', 'canceled'):
-            enqueue_unified_job_created_date_summary(instance.created)
 
     def should_use_fact_cache(self):
         return False
