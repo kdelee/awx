@@ -47,6 +47,9 @@ class UnifiedJobPaginator(DjangoPaginator):
     def visible_scope_groups(self):
         """Resolve canonical owners from the RBAC-filtered UnifiedJob PKs."""
         visible_pks = self.object_list.order_by().values('pk')
+        # Keep ownership resolution in SQL and preserve the visible queryset as
+        # the RBAC boundary. A future PostgreSQL CTE could share this subquery
+        # across child tables, but materializing PKs in Python is worse.
         child_scopes = (
             (Job, UnifiedJobTemplate, 'job_template_id'),
             (ProjectUpdate, Project, 'project_id'),
