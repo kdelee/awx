@@ -596,7 +596,8 @@ Completed on branch `spike/partition-by-created-date`:
 
 - `UnifiedJobCreatedDateSummary` model and migration, keyed by UTC date and `(content_type_id, object_id)`.
 - Child routing migration `0214_unifiedjob_child_created_keys`, adding non-null `job_created` to all concrete UnifiedJob child tables and validating it against the parent `created` value.
-- Relationship-key migrations `0215` through `0218`: ActivityStream through routing, UnifiedJobTemplate current/last-job routing, JobLaunchConfig/WorkflowJobNode routing, and UnifiedJob dependency through routing.
+- Relationship-key migrations `0215` through `0221`: ActivityStream through routing, UnifiedJobTemplate current/last-job routing, JobLaunchConfig/WorkflowJobNode routing, UnifiedJob dependency through routing, notification/label/credential through routing, and composite FK replacement.
+- Full inbound dependency inventory: 34 FK relationships across UnifiedJob, concrete children, event tables, summaries, audits, ActivityStream relations, and workflow relations.
 - UnifiedJob creation/save handling that assigns and preserves matching parent/child routing timestamps for new and existing child rows.
 - Denormalized `organization_id` permission ancestry on scoped summary rows.
 - Idempotent per-date summary generation with terminal-status checks and advisory locking.
@@ -645,7 +646,7 @@ SystemJob
 
 For every child transition, preserve one-to-one parent links, primary-key/partition-key constraints, indexes, and FK behavior. PostgreSQL requires partition-aware uniqueness and may require coordinated parent/child DDL rather than ordinary Django schema operations.
 
-Physical partition implementation is not yet started. Completed prerequisite work includes migration `0214_unifiedjob_child_created_keys`, which adds and backfills the denormalized `job_created` routing key on every concrete child, plus relationship-key migrations `0215` through `0218`. The real migration chain was tested on populated PostgreSQL tables; parent/child timestamps and relationship backfills validated with zero mismatches. Remaining work is notification, label, and credential through-table routing, followed by full relationship validation. Physical table swapping remains deferred until every inbound UnifiedJob relationship carries `(id, created)` safely.
+Physical partition implementation is not yet started. Completed prerequisite work includes migration `0214_unifiedjob_child_created_keys`, which adds and backfills the denormalized `job_created` routing key on every concrete child, plus relationship-key migrations `0215` through `0221`. The real migration chain was tested on populated PostgreSQL tables; parent/child timestamps and relationship backfills validated with zero mismatches. Remaining work is the rest of the inbound graph: event-table composite FKs (event tables already carry `job_created`), JobHostSummary and audit routing fields, concrete-child ActivityStream relations, workflow/cross-child relations, then full index/FK validation. Physical table swapping remains deferred until every inbound relationship carries the correct `(id, created)` identity.
 
 ## Final note
 
