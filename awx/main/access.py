@@ -1812,6 +1812,11 @@ class SystemJobAccess(BaseAccess):
 
     model = SystemJob
 
+    def summary_scope_querysets(self):
+        if self.user.is_superuser or self.user.is_system_auditor:
+            return {'system_job_template': SystemJobTemplate.objects.all()}
+        return {'system_job_template': SystemJobTemplate.objects.none()}
+
     def filtered_queryset(self):
         if self.user.is_superuser or self.user.is_system_auditor:
             return self.model.objects.all()

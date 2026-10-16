@@ -15,6 +15,8 @@ from awx.main.models import (
     InventoryUpdate,
     Project,
     ProjectUpdate,
+    SystemJob,
+    SystemJobTemplate,
     UnifiedJob,
     UnifiedJobCreatedDateSummary,
     UnifiedJobTemplate,
@@ -117,6 +119,7 @@ def generate_unified_job_created_date_summary(partition_date):
             (ProjectUpdate, Project, 'project_id', 'organization_id'),
             (InventoryUpdate, InventorySource, 'inventory_source_id', 'inventory__organization_id'),
             (AdHocCommand, Inventory, 'inventory_id', 'organization_id'),
+            (SystemJob, SystemJobTemplate, 'system_job_template_id', None),
             (WorkflowJob, WorkflowJobTemplate, 'workflow_job_template_id', 'organization_id'),
             (WorkflowApproval, WorkflowJobTemplate, 'unified_job_node__workflow_job__unified_job_template_id', 'unified_job_node__workflow_job__organization_id'),
         )
@@ -139,9 +142,10 @@ def generate_unified_job_created_date_summary(partition_date):
                         'summarized': True,
                         'total': sum(counts.values()),
                         'status_totals': counts,
-                        'organization_id': dict(
-                            resource_model.objects.filter(pk=object_id).values_list('pk', resource_org_field)
-                        ).get(object_id),
+                        'organization_id': (
+                            dict(resource_model.objects.filter(pk=object_id).values_list('pk', resource_org_field)).get(object_id)
+                            if resource_org_field else None
+                        ),
                     },
                 )
                 scoped_count += 1

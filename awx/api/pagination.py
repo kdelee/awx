@@ -53,6 +53,7 @@ class UnifiedJobPaginator(DjangoPaginator):
             'WorkflowJob': ('unified_job_template_id', 'organization_id'),
             'AdHocCommand': ('inventory_id', 'organization_id'),
             'WorkflowApproval': ('unified_job_node__workflow_job__unified_job_template_id', 'unified_job_node__workflow_job__organization_id'),
+            'SystemJob': ('system_job_template_id',),
         }.get(self.object_list.model.__name__)
         if fields is None:
             return None
@@ -70,7 +71,7 @@ class UnifiedJobPaginator(DjangoPaginator):
     @cached_property
     def count(self):
         model_name = getattr(self.object_list.model, '__name__', None)
-        if model_name not in {'Job', 'ProjectUpdate', 'InventoryUpdate', 'WorkflowJob', 'AdHocCommand', 'WorkflowApproval'}:
+        if model_name not in {'Job', 'ProjectUpdate', 'InventoryUpdate', 'WorkflowJob', 'AdHocCommand', 'WorkflowApproval', 'SystemJob'}:
             visible_pks = self.object_list.order_by().values('pk')
             return self.object_list.model.objects.filter(pk__in=visible_pks).count()
         epoch = get_unified_job_summary_epoch()
@@ -94,9 +95,10 @@ class UnifiedJobPaginator(DjangoPaginator):
             'WorkflowJob': ('unified_job_template_id', 'organization_id'),
             'AdHocCommand': ('inventory_id', 'organization_id'),
             'WorkflowApproval': ('unified_job_node__workflow_job__unified_job_template_id', 'unified_job_node__workflow_job__organization_id'),
+            'SystemJob': ('system_job_template_id',),
         }[self.object_list.model.__name__]
         resource_ids = [row[fields[0]] for row in scope_rows if row[fields[0]] is not None]
-        organization_ids = [row[fields[1]] for row in scope_rows if row[fields[1]] is not None]
+        organization_ids = [row[fields[1]] for row in scope_rows if row[fields[1]] is not None] if len(fields) > 1 else []
         resource_models = {
             'Job': UnifiedJobTemplate,
             'ProjectUpdate': Project,
@@ -104,6 +106,7 @@ class UnifiedJobPaginator(DjangoPaginator):
             'WorkflowJob': WorkflowJobTemplate,
             'AdHocCommand': Inventory,
             'WorkflowApproval': WorkflowJobTemplate,
+            'SystemJob': SystemJobTemplate,
         }
         content_type_id = ContentType.objects.get_for_model(resource_models[self.object_list.model.__name__]).id
         summary_total = summarized_visible_scope_count(ready_dates, content_type_id, resource_ids, organization_ids)

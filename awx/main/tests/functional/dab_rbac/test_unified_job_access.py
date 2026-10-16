@@ -1,4 +1,7 @@
+import datetime
+
 import pytest
+from django.utils.timezone import make_aware
 
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
@@ -18,6 +21,31 @@ from awx.main.models import (
     Team,
     UnifiedJob,
 )
+
+
+@pytest.mark.django_db
+def test_unified_job_list_mixed_execution_types_count_once(user, setup_managed_roles, get):
+    """Mixed UnifiedJob children remain visible exactly once through organization RBAC."""
+    org = Organization.objects.create(name='uj-mixed-org')
+    auditor = user('uj-mixed-auditor')
+    RoleDefinition.objects.get(name='Organization Audit').give_permission(auditor, org)
+    inventory = org.inventories.create(name='uj-mixed-inventory')
+    project = Project.objects.create(name='uj-mixed-project', organization=org)
+    jt = JobTemplate.objects.create(name='uj-mixed-jt', project=project, inventory=inventory, organization=org)
+    job = jt.create_unified_job()
+    inv_src = InventorySource.objects.create(name='uj-mixed-source', inventory=inventory, source='ec2')
+    inventory_update = InventoryUpdate.objects.create(inventory_source=inv_src, source=inv_src.source)
+    adhoc = AdHocCommand.objects.create(name='uj-mixed-adhoc', inventory=inventory)
+    for execution in (job, inventory_update, adhoc):
+        execution.created = make_aware(datetime.datetime(2026, 10, 12))
+        execution.save(update_fields=['created'])
+
+    response = get(reverse('api:unified_job_list'), auditor)
+
+    assert response.status_code == 200
+    result_ids = {row['id'] for row in response.data['results']}
+    assert {job.pk, inventory_update.pk, adhoc.pk}.issubset(result_ids)
+    assert response.data['count'] == len(result_ids)
 
 
 @pytest.mark.django_db
