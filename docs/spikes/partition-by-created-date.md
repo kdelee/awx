@@ -595,6 +595,8 @@ This is the concrete execution plan behind the spike: summary table first, then 
 Completed on branch `spike/partition-by-created-date`:
 
 - `UnifiedJobCreatedDateSummary` model and migration, keyed by UTC date and `(content_type_id, object_id)`.
+- Child routing migration `0214_unifiedjob_child_created_keys`, adding non-null `job_created` to all concrete UnifiedJob child tables and validating it against the parent `created` value.
+- UnifiedJob creation/save handling that assigns and preserves matching parent/child routing timestamps for new and existing child rows.
 - Denormalized `organization_id` permission ancestry on scoped summary rows.
 - Idempotent per-date summary generation with terminal-status checks and advisory locking.
 - Hourly retry for yesterday, two-days-ago, and all dirty historical dates.
@@ -642,7 +644,7 @@ SystemJob
 
 For every child transition, preserve one-to-one parent links, primary-key/partition-key constraints, indexes, and FK behavior. PostgreSQL requires partition-aware uniqueness and may require coordinated parent/child DDL rather than ordinary Django schema operations.
 
-Physical partition implementation is not yet started. Next work is a PostgreSQL-only migration/test spike for `main_unifiedjob` plus one child, with rollback and row-count verification before expanding scope.
+Physical partition implementation is not yet started. Completed prerequisite work includes migration `0214_unifiedjob_child_created_keys`, which adds and backfills the denormalized `job_created` routing key on every concrete child. The real migration chain was tested by reversing and reapplying `0214` against populated PostgreSQL tables containing historical/current rows, all seeded child types, `SystemJob`, and an orphan `Job` without a UJT; counts and parent/child timestamps were preserved with zero mismatches. The next work is a PostgreSQL-only table-swap migration for `main_unifiedjob` plus one child, with rollback and row-count verification before expanding scope.
 
 ## Final note
 

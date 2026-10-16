@@ -431,6 +431,13 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, ExecutionEn
 
         from awx.main.signals import disable_activity_stream, activity_stream_create
 
+        # Multi-table inheritance inserts the parent before the concrete child;
+        # populate the child routing key before that insert. ``created`` is
+        # normally assigned by the parent save, so assign both explicitly.
+        if unified_job.created is None:
+            unified_job.created = now()
+        unified_job.job_created = unified_job.created
+
         with disable_activity_stream():
             # Don't emit the activity stream record here for creation,
             # because we haven't attached important M2M relations yet, like
@@ -957,11 +964,15 @@ class UnifiedJob(
             if 'canceled_on' not in update_fields:
                 update_fields.append('canceled_on')
         # Child execution tables carry a denormalized partition routing key.
-        if hasattr(self, 'job_created') and self.job_created != self.created:
-            self.job_created = self.created
-            if 'job_created' not in update_fields:
-                update_fields.append('job_created')
-            kwargs['update_fields'] = update_fields or None
+        if hasattr(self, 'job_created'):
+            if self.created is None:
+                self.created = now()
+            if self.job_created != self.created:
+                self.job_created = self.created
+                if 'job_created' not in update_fields:
+                    update_fields.append('job_created')
+                if not self._state.adding:
+                    kwargs['update_fields'] = update_fields or None
 
         # Okay; we're done. Perform the actual save.
         result = super(UnifiedJob, self).save(*args, **kwargs)
