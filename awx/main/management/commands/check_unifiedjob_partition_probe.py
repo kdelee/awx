@@ -5,11 +5,17 @@ from django.db import connection
 class Command(BaseCommand):
     help = 'Validate the PostgreSQL UnifiedJob partition probe structure.'
 
+    def add_arguments(self, parser):
+        parser.add_argument('--copy-existing', action='store_true', help='Copy current UnifiedJob rows into the probe before checking routing.')
+
     def handle(self, *args, **options):
         if connection.vendor != 'postgresql':
             raise CommandError('UnifiedJob partition probe requires PostgreSQL')
 
         with connection.cursor() as cursor:
+            if options['copy_existing']:
+                cursor.execute('INSERT INTO main_unifiedjob_partition_probe SELECT * FROM main_unifiedjob ON CONFLICT DO NOTHING')
+
             cursor.execute(
                 """
                 SELECT c.relname
@@ -34,5 +40,11 @@ class Command(BaseCommand):
                 """
             )
             total = cursor.fetchone()[0]
+            cursor.execute(
+                "SELECT tableoid::regclass::text, count(*) FROM main_unifiedjob_partition_probe GROUP BY tableoid ORDER BY 1"
+            )
+            routed = cursor.fetchall()
 
         self.stdout.write(self.style.SUCCESS(f'UnifiedJob partition probe is valid ({total} rows)'))
+        for table, count in routed:
+            self.stdout.write(f'  {table}: {count}')
