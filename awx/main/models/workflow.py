@@ -251,6 +251,11 @@ class WorkflowJobNode(WorkflowNodeBase):
         on_delete=models.SET_NULL,
     )
     job_created = models.DateTimeField(null=True, default=None, editable=False)
+
+    def save(self, *args, **kwargs):
+        self.job_created = self.job.created if self.job_id else None
+        super().save(*args, **kwargs)
+
     workflow_job = models.ForeignKey(
         'WorkflowJob',
         related_name='workflow_job_nodes',

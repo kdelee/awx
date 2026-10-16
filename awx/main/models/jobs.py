@@ -1042,6 +1042,10 @@ class JobLaunchConfig(LaunchTimeConfig):
     )
     job_created = models.DateTimeField(null=True, default=None, editable=False)
 
+    def save(self, *args, **kwargs):
+        self.job_created = self.job.created
+        super().save(*args, **kwargs)
+
     # Instance Groups needed for non-unified job / unified JT models
     instance_groups = OrderedManyToManyField(
         'InstanceGroup', related_name='%(class)ss', blank=True, editable=False, through='JobLaunchConfigInstanceGroupMembership'

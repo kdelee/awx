@@ -15,6 +15,11 @@ def backfill_routing_keys(apps, schema_editor):
             'UPDATE main_workflowjobnode c SET job_created = u.created '
             'FROM main_unifiedjob u WHERE u.id = c.job_id'
         )
+        cursor.execute('ALTER TABLE main_joblaunchconfig ALTER COLUMN job_created SET NOT NULL')
+        cursor.execute(
+            'ALTER TABLE main_workflowjobnode ADD CONSTRAINT workflowjobnode_job_created_match '
+            'CHECK ((job_id IS NULL AND job_created IS NULL) OR (job_id IS NOT NULL AND job_created IS NOT NULL))'
+        )
 
 
 class Migration(migrations.Migration):
