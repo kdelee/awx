@@ -43,6 +43,12 @@ def test_unified_job_list_count_uses_summary_and_live_paths(user, setup_managed_
     for execution in (job, inventory_update, adhoc):
         execution.created = make_aware(datetime.datetime(2026, 10, 9))
         execution.save(update_fields=['created'])
+    running_job = jt.create_unified_job()
+    running_job.created = make_aware(datetime.datetime(2026, 10, 10))
+    running_job.save(update_fields=['created'])
+    finalized_job = jt.create_unified_job()
+    finalized_job.created = make_aware(datetime.datetime(2026, 10, 11))
+    finalized_job.save(update_fields=['created'])
     live_job = jt.create_unified_job()
     live_job.created = make_aware(datetime.datetime(2026, 10, 12))
     live_job.save(update_fields=['created'])
@@ -56,6 +62,14 @@ def test_unified_job_list_count_uses_summary_and_live_paths(user, setup_managed_
             summarized=True,
             total=3,
         )
+    UnifiedJobCreatedDateSummary.objects.create(
+        partition_date=datetime.date(2026, 10, 11),
+        content_type_id=ujt_ct.id,
+        object_id=jt.id,
+        organization_id=org.id,
+        summarized=True,
+        total=1,
+    )
 
     with CaptureQueriesContext(connection) as ctx:
         response = get(reverse('api:unified_job_list'), auditor)
@@ -65,8 +79,8 @@ def test_unified_job_list_count_uses_summary_and_live_paths(user, setup_managed_
     count_sql = [q['sql'] for q in ctx.captured_queries if 'COUNT' in q['sql'].upper()]
     assert count_sql
     assert all(' UNION ' not in sql.upper() for sql in count_sql)
-    assert {job.pk, inventory_update.pk, adhoc.pk, live_job.pk}.issubset(result_ids)
-    assert response.data['count'] == len(result_ids) == 4
+    assert {job.pk, inventory_update.pk, adhoc.pk, running_job.pk, finalized_job.pk, live_job.pk}.issubset(result_ids)
+    assert response.data['count'] == len(result_ids) == 6
     summary_sql = [q['sql'] for q in ctx.captured_queries if 'main_unifiedjob_created_date_summary' in q['sql']]
     assert summary_sql
     assert all('UNION' not in sql.upper() for sql in summary_sql)
