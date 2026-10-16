@@ -73,6 +73,22 @@ def summarized_unified_job_count_for_dates(ready_dates, scope_groups):
     return result['total'] if result['total'] is not None else None
 
 
+def summarized_visible_scope_groups_count(ready_dates, scope_groups):
+    """Count summary rows for mixed child scopes; each summary row is unique."""
+    if not ready_dates or not scope_groups:
+        return 0
+    visibility = Q()
+    for content_type_id, object_ids in scope_groups:
+        if object_ids:
+            visibility |= Q(content_type_id=content_type_id, object_id__in=object_ids)
+    if not visibility:
+        return 0
+    result = UnifiedJobCreatedDateSummary.objects.filter(
+        partition_date__in=ready_dates, summarized=True
+    ).filter(visibility).aggregate(total=Sum('total'))
+    return result['total'] or 0
+
+
 def summarized_visible_scope_count(ready_dates, content_type_id, object_ids, organization_ids):
     """Count canonical resource summaries visible directly or by organization."""
     if not ready_dates:

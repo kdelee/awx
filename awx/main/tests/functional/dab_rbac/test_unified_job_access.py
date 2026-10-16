@@ -3,6 +3,7 @@ import datetime
 import pytest
 from django.utils.timezone import make_aware
 
+from django.contrib.contenttypes.models import ContentType
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
 
@@ -20,12 +21,15 @@ from awx.main.models import (
     Project,
     Team,
     UnifiedJob,
+    UnifiedJobCreatedDateSummary,
+    UnifiedJobTemplate,
 )
 
 
 @pytest.mark.django_db
-def test_unified_job_list_mixed_execution_types_count_once(user, setup_managed_roles, get):
-    """Mixed UnifiedJob children remain visible exactly once through organization RBAC."""
+def test_unified_job_list_count_uses_summary_and_live_paths(user, setup_managed_roles, get, mocker):
+    """Finalized historical rows use summaries; current rows use live count."""
+    mocker.patch('awx.api.pagination.get_unified_job_summary_epoch', return_value=make_aware(datetime.datetime(2026, 10, 1)))
     org = Organization.objects.create(name='uj-mixed-org')
     auditor = user('uj-mixed-auditor')
     RoleDefinition.objects.get(name='Organization Audit').give_permission(auditor, org)
@@ -37,8 +41,21 @@ def test_unified_job_list_mixed_execution_types_count_once(user, setup_managed_r
     inventory_update = InventoryUpdate.objects.create(inventory_source=inv_src, source=inv_src.source)
     adhoc = AdHocCommand.objects.create(name='uj-mixed-adhoc', inventory=inventory)
     for execution in (job, inventory_update, adhoc):
-        execution.created = make_aware(datetime.datetime(2026, 10, 12))
+        execution.created = make_aware(datetime.datetime(2026, 10, 9))
         execution.save(update_fields=['created'])
+    live_job = jt.create_unified_job()
+    live_job.created = make_aware(datetime.datetime(2026, 10, 12))
+    live_job.save(update_fields=['created'])
+    ujt_ct = ContentType.objects.get_for_model(UnifiedJobTemplate)
+    for content_type_id, object_id in ((None, None), (ujt_ct.id, jt.id)):
+        UnifiedJobCreatedDateSummary.objects.create(
+            partition_date=datetime.date(2026, 10, 9),
+            content_type_id=content_type_id,
+            object_id=object_id,
+            organization_id=org.id if object_id is not None else None,
+            summarized=True,
+            total=3,
+        )
 
     with CaptureQueriesContext(connection) as ctx:
         response = get(reverse('api:unified_job_list'), auditor)
@@ -48,8 +65,11 @@ def test_unified_job_list_mixed_execution_types_count_once(user, setup_managed_r
     count_sql = [q['sql'] for q in ctx.captured_queries if 'COUNT' in q['sql'].upper()]
     assert count_sql
     assert all(' UNION ' not in sql.upper() for sql in count_sql)
-    assert {job.pk, inventory_update.pk, adhoc.pk}.issubset(result_ids)
-    assert response.data['count'] == len(result_ids)
+    assert {job.pk, inventory_update.pk, adhoc.pk, live_job.pk}.issubset(result_ids)
+    assert response.data['count'] == len(result_ids) == 4
+    summary_sql = [q['sql'] for q in ctx.captured_queries if 'main_unifiedjob_created_date_summary' in q['sql']]
+    assert summary_sql
+    assert all('UNION' not in sql.upper() for sql in summary_sql)
 
 
 @pytest.mark.django_db

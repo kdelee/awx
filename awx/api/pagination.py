@@ -18,9 +18,9 @@ from django.utils.translation import gettext_lazy as _
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import (
     FieldLookupBackend,
 )
-from awx.main.models import ActivityStream, Inventory, InventorySource, Project, UnifiedJobTemplate, WorkflowJobTemplate
+from awx.main.models import ActivityStream, AdHocCommand, Inventory, InventorySource, InventoryUpdate, Job, Project, ProjectUpdate, SystemJob, SystemJobTemplate, UnifiedJobTemplate, WorkflowApproval, WorkflowJob, WorkflowJobTemplate
 from awx.main.utils.common import get_unified_job_summary_epoch
-from awx.main.utils.unified_job_summaries import summarized_visible_scope_count, summary_ready_dates
+from awx.main.utils.unified_job_summaries import summarized_visible_scope_groups_count, summary_ready_dates
 
 
 class DisabledPaginator(DjangoPaginator):
@@ -43,6 +43,26 @@ class ActivityStreamPaginator(DjangoPaginator):
 
 class UnifiedJobPaginator(DjangoPaginator):
     """Count visible UnifiedJob rows through a primary-key subquery."""
+
+    def visible_scope_groups(self):
+        """Resolve canonical owners from the RBAC-filtered UnifiedJob PKs."""
+        visible_pks = self.object_list.order_by().values('pk')
+        child_scopes = (
+            (Job, UnifiedJobTemplate, 'job_template_id'),
+            (ProjectUpdate, Project, 'project_id'),
+            (InventoryUpdate, InventorySource, 'inventory_source_id'),
+            (AdHocCommand, Inventory, 'inventory_id'),
+            (WorkflowJob, WorkflowJobTemplate, 'unified_job_template_id'),
+            (WorkflowApproval, WorkflowJobTemplate, 'unified_job_node__workflow_job__unified_job_template_id'),
+            (SystemJob, SystemJobTemplate, 'system_job_template_id'),
+        )
+        return [
+            (
+                ContentType.objects.get_for_model(resource_model).id,
+                child_model.objects.filter(unifiedjob_ptr_id__in=visible_pks).values_list(owner_field, flat=True).distinct(),
+            )
+            for child_model, resource_model, owner_field in child_scopes
+        ]
 
     def visible_scope_rows(self):
         """Read canonical scope identities from the already-RBAC-filtered queryset."""
@@ -71,6 +91,14 @@ class UnifiedJobPaginator(DjangoPaginator):
     @cached_property
     def count(self):
         model_name = getattr(self.object_list.model, '__name__', None)
+        if model_name == 'UnifiedJob':
+            epoch = get_unified_job_summary_epoch()
+            if epoch is not None:
+                ready_dates = summary_ready_dates(timezone.localtime(epoch).date(), timezone.localdate())
+                summary_total = summarized_visible_scope_groups_count(ready_dates, self.visible_scope_groups())
+                visible_pks = self.object_list.order_by().values('pk')
+                live = self.object_list.model.objects.filter(pk__in=visible_pks).exclude(created__date__in=ready_dates).count()
+                return summary_total + live
         if model_name not in {'Job', 'ProjectUpdate', 'InventoryUpdate', 'WorkflowJob', 'AdHocCommand', 'WorkflowApproval', 'SystemJob'}:
             visible_pks = self.object_list.order_by().values('pk')
             return self.object_list.model.objects.filter(pk__in=visible_pks).count()
