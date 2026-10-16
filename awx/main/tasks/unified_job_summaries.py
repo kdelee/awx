@@ -9,6 +9,8 @@ from dispatcherd.publish import task
 from ansible_base.lib.utils.db import advisory_lock
 from awx.main.dispatch import get_task_queuename
 from awx.main.models import (
+    AdHocCommand,
+    Inventory,
     InventorySource,
     InventoryUpdate,
     Project,
@@ -16,6 +18,7 @@ from awx.main.models import (
     UnifiedJob,
     UnifiedJobCreatedDateSummary,
     UnifiedJobTemplate,
+    WorkflowApproval,
     WorkflowJob,
     WorkflowJobTemplate,
 )
@@ -113,7 +116,9 @@ def generate_unified_job_created_date_summary(partition_date):
         scope_models = (
             (ProjectUpdate, Project, 'project_id', 'organization_id'),
             (InventoryUpdate, InventorySource, 'inventory_source_id', 'inventory__organization_id'),
+            (AdHocCommand, Inventory, 'inventory_id', 'organization_id'),
             (WorkflowJob, WorkflowJobTemplate, 'workflow_job_template_id', 'organization_id'),
+            (WorkflowApproval, WorkflowJobTemplate, 'unified_job_node__workflow_job__unified_job_template_id', 'unified_job_node__workflow_job__organization_id'),
         )
         start, end = _date_bounds(partition_date)
         scoped_count = len(scoped)

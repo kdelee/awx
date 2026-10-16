@@ -97,6 +97,33 @@ class TestUnifiedJobPaginator:
         visible.filter.assert_any_call(created__lt='2026-10-01T00:00:00Z')
         visible.filter.assert_any_call(created__gte='2026-10-01T00:00:00Z')
 
+    def test_visible_scope_rows_supports_adhoc_commands(self):
+        class AdHocCommand:
+            pass
+
+        object_list = MagicMock()
+        object_list.model = AdHocCommand
+        paginator = UnifiedJobPaginator(object_list=object_list, per_page=25)
+
+        paginator.visible_scope_rows()
+
+        object_list.order_by.return_value.values.assert_called_once_with('inventory_id', 'organization_id')
+
+    def test_visible_scope_rows_supports_workflow_approvals(self):
+        class WorkflowApproval:
+            pass
+
+        object_list = MagicMock()
+        object_list.model = WorkflowApproval
+        paginator = UnifiedJobPaginator(object_list=object_list, per_page=25)
+
+        paginator.visible_scope_rows()
+
+        object_list.order_by.return_value.values.assert_called_once_with(
+            'unified_job_node__workflow_job__unified_job_template_id',
+            'unified_job_node__workflow_job__organization_id',
+        )
+
     def test_count_uses_visible_primary_key_subquery(self):
         object_list = MagicMock()
         object_list.order_by.return_value.values.return_value = 'visible_pks'

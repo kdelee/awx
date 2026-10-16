@@ -2244,6 +2244,9 @@ class AdHocCommandAccess(BaseAccess):
         'credential',
     )
 
+    def summary_scope_querysets(self):
+        return {'inventory': Inventory.access_ids_qs(self.user, 'view')}
+
     def filtered_queryset(self):
         return self.model.objects.filter(inventory__in=Inventory.access_ids_qs(self.user, 'view'))
 
@@ -2921,6 +2924,9 @@ class WorkflowApprovalAccess(BaseAccess):
 
     def can_start(self, obj, validate_license=True):
         return True
+
+    def summary_scope_querysets(self):
+        return {'workflow_job_template': WorkflowJobTemplate.access_ids_qs(self.user, 'view')}
 
     def filtered_queryset(self):
         return self.model.objects.filter(unified_job_node__workflow_job__unified_job_template__in=WorkflowJobTemplate.access_ids_qs(self.user, 'view'))

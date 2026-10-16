@@ -5,6 +5,8 @@ from collections import OrderedDict
 
 # Django REST Framework
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
+from django.utils import timezone
 from django.core.paginator import Paginator as DjangoPaginator
 from django.utils.functional import cached_property
 from rest_framework import pagination
@@ -16,7 +18,9 @@ from django.utils.translation import gettext_lazy as _
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import (
     FieldLookupBackend,
 )
-from awx.main.models import ActivityStream
+from awx.main.models import ActivityStream, Inventory, InventorySource, Project, UnifiedJobTemplate, WorkflowJobTemplate
+from awx.main.utils.common import get_unified_job_summary_epoch
+from awx.main.utils.unified_job_summaries import summarized_visible_scope_count, summary_ready_dates
 
 
 class DisabledPaginator(DjangoPaginator):
@@ -47,6 +51,8 @@ class UnifiedJobPaginator(DjangoPaginator):
             'ProjectUpdate': ('project_id', 'project__organization_id'),
             'InventoryUpdate': ('inventory_source_id', 'inventory_source__inventory__organization_id'),
             'WorkflowJob': ('unified_job_template_id', 'organization_id'),
+            'AdHocCommand': ('inventory_id', 'organization_id'),
+            'WorkflowApproval': ('unified_job_node__workflow_job__unified_job_template_id', 'unified_job_node__workflow_job__organization_id'),
         }.get(self.object_list.model.__name__)
         if fields is None:
             return None
@@ -63,8 +69,47 @@ class UnifiedJobPaginator(DjangoPaginator):
 
     @cached_property
     def count(self):
+        model_name = getattr(self.object_list.model, '__name__', None)
+        if model_name not in {'Job', 'ProjectUpdate', 'InventoryUpdate', 'WorkflowJob', 'AdHocCommand', 'WorkflowApproval'}:
+            visible_pks = self.object_list.order_by().values('pk')
+            return self.object_list.model.objects.filter(pk__in=visible_pks).count()
+        epoch = get_unified_job_summary_epoch()
+        if epoch is None:
+            visible_pks = self.object_list.order_by().values('pk')
+            return self.object_list.model.objects.filter(pk__in=visible_pks).count()
+
+        epoch_date = timezone.localtime(epoch).date()
+        today = timezone.localdate()
+        ready_dates = summary_ready_dates(epoch_date, today)
+        scopes = self.visible_scope_rows()
+        if scopes is None:
+            visible_pks = self.object_list.order_by().values('pk')
+            return self.object_list.model.objects.filter(pk__in=visible_pks).count()
+
+        scope_rows = list(scopes)
+        fields = {
+            'Job': ('job_template_id', 'organization_id'),
+            'ProjectUpdate': ('project_id', 'project__organization_id'),
+            'InventoryUpdate': ('inventory_source_id', 'inventory_source__inventory__organization_id'),
+            'WorkflowJob': ('unified_job_template_id', 'organization_id'),
+            'AdHocCommand': ('inventory_id', 'organization_id'),
+            'WorkflowApproval': ('unified_job_node__workflow_job__unified_job_template_id', 'unified_job_node__workflow_job__organization_id'),
+        }[self.object_list.model.__name__]
+        resource_ids = [row[fields[0]] for row in scope_rows if row[fields[0]] is not None]
+        organization_ids = [row[fields[1]] for row in scope_rows if row[fields[1]] is not None]
+        resource_models = {
+            'Job': UnifiedJobTemplate,
+            'ProjectUpdate': Project,
+            'InventoryUpdate': InventorySource,
+            'WorkflowJob': WorkflowJobTemplate,
+            'AdHocCommand': Inventory,
+            'WorkflowApproval': WorkflowJobTemplate,
+        }
+        content_type_id = ContentType.objects.get_for_model(resource_models[self.object_list.model.__name__]).id
+        summary_total = summarized_visible_scope_count(ready_dates, content_type_id, resource_ids, organization_ids)
         visible_pks = self.object_list.order_by().values('pk')
-        return self.object_list.model.objects.filter(pk__in=visible_pks).count()
+        live = self.object_list.model.objects.filter(pk__in=visible_pks).exclude(created__date__in=ready_dates).count()
+        return summary_total + live
 
 
 class JobPaginator(DjangoPaginator):
