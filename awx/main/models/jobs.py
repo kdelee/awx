@@ -1104,6 +1104,7 @@ class JobHostSummary(CreatedModifiedModel):
         on_delete=models.CASCADE,
         editable=False,
     )
+    job_created = models.DateTimeField(null=True, default=None, editable=False)
     host = models.ForeignKey('Host', related_name='job_host_summaries', null=True, default=None, on_delete=models.SET_NULL, editable=False)
     constructed_host = models.ForeignKey(
         'Host',
@@ -1154,6 +1155,7 @@ class JobHostSummary(CreatedModifiedModel):
         # if it hasn't been specified, then we're just doing a normal save.
         if self.host is not None:
             self.host_name = self.host.name
+        self.job_created = self.job.created
         update_fields = kwargs.get('update_fields') or []
         self.failed = bool(self.dark or self.failures)
         update_fields.append('failed')

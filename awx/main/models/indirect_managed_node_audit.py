@@ -25,6 +25,11 @@ class IndirectManagedNodeAudit(BaseModel):
         editable=False,
         help_text=_('Data saved in this record only applies to this specified job.'),
     )
+    job_created = DateTimeField(null=True, default=None, editable=False)
+
+    def save(self, *args, **kwargs):
+        self.job_created = self.job.created
+        super().save(*args, **kwargs)
 
     organization = ForeignKey(
         'Organization',
