@@ -673,6 +673,7 @@ class WorkflowJobNodeBaseInstanceGroupMembership(models.Model):
 
 
 class WorkflowJobInstanceGroupMembership(models.Model):
+    # Historical field name is misleading: this FK targets WorkflowJob, not WorkflowJobNode.
     workflowjob_created = models.DateTimeField(null=True, default=None, editable=False)
     workflowjobnode = models.ForeignKey('WorkflowJob', on_delete=models.CASCADE)
     instancegroup = models.ForeignKey('InstanceGroup', on_delete=models.CASCADE)
