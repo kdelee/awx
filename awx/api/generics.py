@@ -5,6 +5,7 @@
 import inspect
 import logging
 import time
+from datetime import timezone
 
 # Django
 from django.conf import settings
@@ -17,6 +18,7 @@ from django.http import QueryDict, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.loader import render_to_string
 from django.utils.encoding import smart_str
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
@@ -464,10 +466,22 @@ class ListAPIView(generics.ListAPIView, GenericAPIView):
         )
 
     def _validate_created_date_range(self):
-        if self._requires_created_date_range() and not self._has_created_date_range():
+        if not self._requires_created_date_range():
+            return
+        params = self.request.query_params
+        if not self._has_created_date_range():
             raise ParseError(
                 _('Search and filtered execution list requests require created__gte and created__lt (UTC).')
             )
+        lower = params.get('created__gte') or params.get('created_after')
+        upper = params.get('created__lt') or params.get('created_before')
+        if lower and upper:
+            lower_value = parse_datetime(lower) or parse_date(lower)
+            upper_value = parse_datetime(upper) or parse_date(upper)
+            midnight = lambda value: getattr(value, 'hour', 0) == 0 and getattr(value, 'minute', 0) == 0 and getattr(value, 'second', 0) == 0
+            utc = lambda value: not hasattr(value, 'tzinfo') or value.tzinfo is None or value.utcoffset() == timezone.utc.utcoffset(value)
+            if lower_value is None or upper_value is None or not midnight(lower_value) or not midnight(upper_value) or not utc(lower_value) or not utc(upper_value):
+                raise ParseError(_('created__gte and created__lt must be UTC whole-day boundaries.'))
 
     def get_queryset(self):
         self._validate_created_date_range()

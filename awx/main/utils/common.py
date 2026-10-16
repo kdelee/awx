@@ -91,6 +91,7 @@ __all__ = [
     'truncate_stdout',
     'deepmerge',
     'get_event_partition_epoch',
+    'get_unified_job_summary_epoch',
     'cleanup_new_process',
     'unified_job_class_to_event_table_name',
     'get_job_variable_prefixes',
@@ -217,6 +218,14 @@ def get_event_partition_epoch():
     from django.db.migrations.recorder import MigrationRecorder
 
     return MigrationRecorder.Migration.objects.filter(app='main', name='0144_event_partitions').first().applied
+
+
+@memoize(ttl=3600 * 24)
+def get_unified_job_summary_epoch():
+    """Return the migration-backed cutover for summary versus live counts."""
+    from django.db.migrations.recorder import MigrationRecorder
+
+    return MigrationRecorder.Migration.objects.filter(app='main', name='0213_unified_job_created_date_summary').first().applied
 
 
 def get_awx_version():

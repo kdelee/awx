@@ -230,6 +230,30 @@ def test_unified_job_filter_accepts_created_range():
     view._validate_created_date_range()
 
 
+@pytest.mark.parametrize(
+    'lower,upper',
+    [
+        ('2026-01-01T12:00:00Z', '2026-01-02T00:00:00Z'),
+        ('2026-01-01T00:00:00-04:00', '2026-01-02T00:00:00-04:00'),
+    ],
+)
+def test_unified_job_filter_rejects_non_utc_whole_day_range(lower, upper):
+    view = ListAPIView()
+    view.model = Job
+    view.request = mock.MagicMock(query_params={'created__gte': lower, 'created__lt': upper})
+
+    with pytest.raises(ParseError, match='UTC whole-day'):
+        view._validate_created_date_range()
+
+
+def test_unified_job_filter_accepts_date_only_whole_day_range():
+    view = ListAPIView()
+    view.model = Job
+    view.request = mock.MagicMock(query_params={'created__gte': '2026-01-01', 'created__lt': '2026-01-02'})
+
+    view._validate_created_date_range()
+
+
 def test_non_unified_job_search_does_not_require_created_range():
     view = ListAPIView()
     view.model = Credential

@@ -1,4 +1,33 @@
-from awx.main.utils.unified_job_summaries import combine_summary_and_live_counts, summary_scope_is_disjoint, summarized_unified_job_count
+from datetime import date
+
+from awx.main.utils.unified_job_summaries import combine_summary_and_live_counts, summary_dates_ready, summary_ready_dates, summary_scope_is_disjoint, summarized_unified_job_count, summarized_unified_job_count_for_dates
+
+
+def test_summary_dates_require_every_historical_day(mocker):
+    rows = mocker.patch('awx.main.utils.unified_job_summaries.UnifiedJobCreatedDateSummary.objects.filter')
+    rows.return_value.values_list.return_value = [(date(2026, 10, 1), True)]
+
+    assert summary_dates_ready(date(2026, 10, 1), date(2026, 10, 3)) is False
+
+
+def test_summary_readiness_is_per_date(mocker):
+    rows = mocker.patch('awx.main.utils.unified_job_summaries.UnifiedJobCreatedDateSummary.objects.filter')
+    rows.return_value.values_list.return_value = [
+        (date(2026, 10, 9), True),
+        (date(2026, 10, 11), True),
+    ]
+
+    assert summary_ready_dates(date(2026, 10, 9), date(2026, 10, 13)) == {
+        date(2026, 10, 9), date(2026, 10, 11)
+    }
+
+
+def test_summary_count_uses_only_ready_dates(mocker):
+    aggregate = mocker.patch('awx.main.utils.unified_job_summaries.UnifiedJobCreatedDateSummary.objects.filter')
+    aggregate.return_value.filter.return_value.aggregate.return_value = {'total': 80}
+
+    assert summarized_unified_job_count_for_dates({date(2026, 10, 9), date(2026, 10, 11)}, [(17, [1234])]) == 80
+    aggregate.assert_called_once()
 
 
 def test_summary_scopes_with_same_content_type_can_be_summed():

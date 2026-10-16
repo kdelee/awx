@@ -40,6 +40,27 @@ class ActivityStreamPaginator(DjangoPaginator):
 class UnifiedJobPaginator(DjangoPaginator):
     """Count visible UnifiedJob rows through a primary-key subquery."""
 
+    def visible_scope_rows(self):
+        """Read canonical scope identities from the already-RBAC-filtered queryset."""
+        fields = {
+            'Job': ('job_template_id', 'organization_id'),
+            'ProjectUpdate': ('project_id', 'project__organization_id'),
+            'InventoryUpdate': ('inventory_source_id', 'inventory_source__inventory__organization_id'),
+            'WorkflowJob': ('unified_job_template_id', 'organization_id'),
+        }.get(self.object_list.model.__name__)
+        if fields is None:
+            return None
+        return self.object_list.order_by().values(*fields).distinct()
+
+    def epoch_querysets(self, epoch):
+        """Split the visible queryset at the migration-backed summary epoch."""
+        visible_pks = self.object_list.order_by().values('pk')
+        visible = self.object_list.model.objects.filter(pk__in=visible_pks)
+        return (
+            visible.filter(created__lt=epoch),
+            visible.filter(created__gte=epoch),
+        )
+
     @cached_property
     def count(self):
         visible_pks = self.object_list.order_by().values('pk')

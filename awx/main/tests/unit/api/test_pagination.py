@@ -72,6 +72,31 @@ class TestActivityStreamPagination:
 
 
 class TestUnifiedJobPaginator:
+    def test_visible_scope_rows_come_from_rbac_filtered_queryset(self):
+        class Job:
+            pass
+
+        object_list = MagicMock()
+        object_list.model = Job
+        paginator = UnifiedJobPaginator(object_list=object_list, per_page=25)
+
+        paginator.visible_scope_rows()
+
+        object_list.order_by.return_value.values.assert_called_once_with('job_template_id', 'organization_id')
+        object_list.order_by.return_value.values.return_value.distinct.assert_called_once_with()
+
+    def test_epoch_querysets_split_visible_rows_at_summary_cutover(self):
+        object_list = MagicMock()
+        visible = object_list.model.objects.filter.return_value
+        paginator = UnifiedJobPaginator(object_list=object_list, per_page=25)
+
+        historical, live = paginator.epoch_querysets('2026-10-01T00:00:00Z')
+
+        assert historical == visible.filter.return_value
+        assert live == visible.filter.return_value
+        visible.filter.assert_any_call(created__lt='2026-10-01T00:00:00Z')
+        visible.filter.assert_any_call(created__gte='2026-10-01T00:00:00Z')
+
     def test_count_uses_visible_primary_key_subquery(self):
         object_list = MagicMock()
         object_list.order_by.return_value.values.return_value = 'visible_pks'
