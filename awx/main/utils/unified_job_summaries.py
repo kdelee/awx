@@ -3,6 +3,13 @@ from django.db.models import Sum
 from awx.main.models import UnifiedJobCreatedDateSummary
 
 
+def combine_summary_and_live_counts(summarized_count, live_count):
+    """Combine disjoint finalized-date and live-date counts."""
+    if summarized_count is None:
+        return live_count
+    return summarized_count + live_count
+
+
 def summarized_unified_job_count(start, end, content_type_id, object_ids):
     """Return finalized summary count for visible RBAC resources.
 

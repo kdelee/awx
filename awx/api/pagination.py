@@ -38,11 +38,12 @@ class ActivityStreamPaginator(DjangoPaginator):
 
 
 class UnifiedJobPaginator(DjangoPaginator):
-    """Count actual queryset so pagination metadata matches visible rows."""
+    """Count visible UnifiedJob rows through a primary-key subquery."""
 
     @cached_property
     def count(self):
-        return self.object_list.count()
+        visible_pks = self.object_list.order_by().values('pk')
+        return self.object_list.model.objects.filter(pk__in=visible_pks).count()
 
 
 class JobPaginator(DjangoPaginator):
