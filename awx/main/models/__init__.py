@@ -61,6 +61,7 @@ from awx.main.models.execution_environments import ExecutionEnvironment  # noqa
 from awx.main.models.activity_stream import ActivityStream  # noqa
 from awx.main.models.activity_stream_unified_job import ActivityStreamUnifiedJob  # noqa
 from awx.main.models.unified_job_dependent import UnifiedJobDependent  # noqa
+from awx.main.models.unified_job_relations import UnifiedJobNotification, UnifiedJobLabel, UnifiedJobCredential  # noqa
 from awx.main.models.unified_job_created_date_summary import UnifiedJobCreatedDateSummary  # noqa
 from awx.main.models.ha import (  # noqa
     Instance,

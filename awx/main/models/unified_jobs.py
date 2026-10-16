@@ -662,7 +662,7 @@ class UnifiedJob(
         help_text=_("The instance that managed the execution environment."),
     )
     notifications = models.ManyToManyField(
-        'Notification',
+        'Notification', through='UnifiedJobNotification',
         editable=False,
         related_name='%(class)s_notifications',
     )
@@ -755,7 +755,7 @@ class UnifiedJob(
         default='',
         editable=False,
     )
-    labels = models.ManyToManyField("Label", blank=True, related_name='%(class)s_labels')
+    labels = models.ManyToManyField("Label", through='UnifiedJobLabel', blank=True, related_name='%(class)s_labels')
     instance_group = models.ForeignKey(
         'InstanceGroup',
         blank=True,
@@ -781,7 +781,7 @@ class UnifiedJob(
         help_text=_('The organization used to determine access to this unified job.'),
     )
     credentials = models.ManyToManyField(
-        'Credential',
+        'Credential', through='UnifiedJobCredential',
         related_name='%(class)ss',
     )
     installed_collections = models.JSONField(
