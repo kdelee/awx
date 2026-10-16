@@ -233,23 +233,18 @@ def test_unified_job_list_filtered_count_matches_results(admin, organization, in
 
 
 @pytest.mark.django_db
-def test_unified_job_list_pagination_uses_unfiltered_count(rando, setup_managed_roles, get):
-    """The pagination count should reflect total unified job rows, not
-    the RBAC-filtered subset.  The RBAC-filtered COUNT is catastrophically
-    slow on large tables with pk__in UNION subqueries."""
+def test_unified_job_list_pagination_uses_visible_count(rando, setup_managed_roles, get):
+    """Pagination count follows the RBAC-filtered visible queryset."""
     org = Organization.objects.create(name='uj-count-org')
     inventory = org.inventories.create(name='uj-count-inv')
     project = Project.objects.create(name='uj-count-project', organization=org)
     jt = JobTemplate.objects.create(name='uj-count-jt', project=project, inventory=inventory, organization=org)
     jt.create_unified_job()
 
-    total_jobs = UnifiedJob.objects.count()
-    assert total_jobs > 0
-
     response = get(reverse('api:unified_job_list'), rando)
     assert response.status_code == 200
     assert len(response.data['results']) == 0
-    assert response.data['count'] == total_jobs
+    assert response.data['count'] == 0
 
 
 @pytest.mark.django_db
