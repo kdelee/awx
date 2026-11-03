@@ -297,8 +297,11 @@ def test_prefetch_user_capabilities_matches_multi_org_access(organization, organ
 
 
 @pytest.mark.django_db
-def test_prefetch_user_capabilities_orphan(organization, alice, bob):
+def test_prefetch_user_capabilities_orphan(organization, organization_factory, alice, bob):
     organization.admin_role.members.add(alice)
+    other_org = organization_factory('capability-prefetch-orphan-other-org', inventories=['orphan-inventory']).organization
+    other_inventory = other_org.inventories.get(name='orphan-inventory')
+    other_inventory.read_role.members.add(bob)
 
     mapping = prefetch_page_capabilities(
         User,
