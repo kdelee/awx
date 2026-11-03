@@ -677,7 +677,8 @@ def prefetch_page_capabilities(model, page, prefetch_list, user):
                     for target_id, org_id in member_assignments:
                         memberships.setdefault(target_id, set()).add(org_id)
                     if display_method == 'delete' and orphan_allowed_ids is None:
-                        orphan_target_ids = target_ids - memberships.keys()
+                        protected_target_ids = set(model.objects.filter(pk__in=target_ids, is_superuser=True).values_list('pk', flat=True))
+                        orphan_target_ids = target_ids - memberships.keys() - protected_target_ids - system_auditor_ids - {user.pk}
                         if orphan_target_ids:
                             actor_role_ids = RoleUserAssignment.objects.filter(user_id=user.pk).values('object_role_id')
                             actor_match = RoleEvaluation.objects.filter(
