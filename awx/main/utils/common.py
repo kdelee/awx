@@ -680,22 +680,23 @@ def prefetch_page_capabilities(model, page, prefetch_list, user):
                         orphan_target_ids = target_ids - memberships.keys()
                         if orphan_target_ids:
                             actor_role_ids = RoleUserAssignment.objects.filter(user_id=user.pk).values('object_role_id')
-                            target_role_ids = RoleUserAssignment.objects.filter(user_id=OuterRef(OuterRef('pk'))).values('object_role_id')
                             actor_match = RoleEvaluation.objects.filter(
                                 role_id__in=actor_role_ids,
-                                object_id=OuterRef('object_id'),
-                                content_type_id=OuterRef('content_type_id'),
-                                codename=OuterRef('codename'),
+                                object_id=OuterRef('object_role__permission_partials__object_id'),
+                                content_type_id=OuterRef('object_role__permission_partials__content_type_id'),
+                                codename=OuterRef('object_role__permission_partials__codename'),
                             )
-                            unmatched_target_permission = (
-                                RoleEvaluation.objects.filter(role_id__in=target_role_ids).annotate(actor_match=Exists(actor_match)).filter(actor_match=False)
+                            violating_target_ids = set(
+                                RoleUserAssignment.objects.filter(
+                                    user_id__in=orphan_target_ids,
+                                    object_role__permission_partials__isnull=False,
+                                )
+                                .annotate(actor_match=Exists(actor_match))
+                                .filter(actor_match=False)
+                                .values_list('user_id', flat=True)
+                                .distinct()
                             )
-                            orphan_allowed_ids = set(
-                                model.objects.filter(pk__in=orphan_target_ids)
-                                .annotate(has_unmatched_permission=Exists(unmatched_target_permission))
-                                .filter(has_unmatched_permission=False)
-                                .values_list('pk', flat=True)
-                            )
+                            orphan_allowed_ids = orphan_target_ids - violating_target_ids
                         else:
                             orphan_allowed_ids = set()
                     user_access = UserAccess(user)
