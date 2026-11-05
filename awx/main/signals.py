@@ -441,7 +441,7 @@ def activity_stream_create(sender, instance, created, **kwargs):
             if object1 == 'unified_job':
                 relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
             elif object1 in {'job', 'project_update', 'inventory_update', 'workflow_job', 'workflow_approval', 'ad_hoc_command'}:
-                relation.add(instance.pk, through_defaults={'unifiedjob_created': instance.created})
+                relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
             else:
                 relation.add(instance.pk)
         else:
@@ -475,7 +475,7 @@ def activity_stream_update(sender, instance, **kwargs):
         if object1 == 'unified_job':
             relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
         elif object1 in {'job', 'project_update', 'inventory_update', 'workflow_job', 'workflow_approval', 'ad_hoc_command'}:
-            relation.add(instance.pk, through_defaults={'unifiedjob_created': instance.created})
+            relation.add(instance.pk, through_defaults={'unified_job_created': instance.created})
         else:
             relation.add(instance.pk)
     else:
@@ -507,6 +507,14 @@ def activity_stream_delete(sender, instance, **kwargs):
     activity_entry = get_activity_stream_class()(operation='delete', changes=json.dumps(changes), object1=object1, actor=get_current_user_or_none())
     activity_entry.save()
     connection.on_commit(lambda: emit_activity_stream_change(activity_entry))
+
+
+def _add_activity_relation(activity_entry, relation_name, obj):
+    relation = getattr(activity_entry, relation_name)
+    if relation_name in {'unified_job', 'job', 'project_update', 'inventory_update', 'workflow_job', 'workflow_approval', 'ad_hoc_command'}:
+        relation.add(obj.pk, through_defaults={'unified_job_created': obj.created})
+    else:
+        relation.add(obj.pk)
 
 
 def activity_stream_associate(sender, instance, **kwargs):
@@ -557,8 +565,8 @@ def activity_stream_associate(sender, instance, **kwargs):
                 actor=get_current_user_or_none(),
             )
             activity_entry.save()
-            getattr(activity_entry, object1).add(obj1.pk)
-            getattr(activity_entry, object2).add(obj2_actual.pk)
+            _add_activity_relation(activity_entry, object1, obj1)
+            _add_activity_relation(activity_entry, object2, obj2_actual)
 
             if 'role' in kwargs:
                 role = kwargs['role']

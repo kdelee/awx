@@ -4,7 +4,7 @@ from django.db import models
 class ActivityStreamUnifiedJob(models.Model):
     activity_stream = models.ForeignKey('ActivityStream', on_delete=models.CASCADE, db_column='activitystream_id')
     unified_job = models.ForeignKey('UnifiedJob', on_delete=models.CASCADE, db_column='unifiedjob_id')
-    unified_job_created = models.DateTimeField(editable=False)
+    unified_job_created = models.DateTimeField(editable=False, db_column='unifiedjob_created')
 
     class Meta:
         app_label = 'main'

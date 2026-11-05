@@ -323,7 +323,7 @@ class UnifiedJobTemplate(PolymorphicModel, CommonModelNameNotUnique, ExecutionEn
         for field in ('current_job_created', 'last_job_created'):
             if field not in update_fields:
                 update_fields.append(field)
-        if update_fields:
+        if update_fields and not self._state.adding:
             kwargs['update_fields'] = update_fields
         # Do the actual save.
         super(UnifiedJobTemplate, self).save(*args, **kwargs)
